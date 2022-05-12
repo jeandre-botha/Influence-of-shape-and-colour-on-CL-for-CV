@@ -1,15 +1,14 @@
 import argparse
-import logging
 import json
 import os
+from os.path import exists as file_exists
 
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
+from logger import logger
 from trainer import Trainer
 from tester import Tester
-
-LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = {
     "type": "object",
@@ -57,6 +56,19 @@ if __name__ == '__main__':
         )
 
         options = parser.parse_args()
+
+        if not file_exists(options.config):
+            logger.error('config file does not exist at location "'+ options.config +'"')
+            exit(0)
+
+        if not file_exists(options.model):
+            logger.error('model does not exist at location "'+ options.model +'"')
+            exit(0)
+
+        if not file_exists(options.data):
+            logger.error('data file does not exist at location "'+ options.data +'"')
+            exit(0)
+
         config = {}
         with open(options.config, 'r') as config_file:
             config = json.loads(config_file.read())
@@ -64,15 +76,17 @@ if __name__ == '__main__':
         try:
             validate(instance=config, schema=CONFIG_SCHEMA)
         except JsonSchemaValidationError as err:
-            LOGGER.exception("Invalid config file structure, err: ", err)
+            logger.error('Invalid config file structure, err: ', err)
+            exit(0)
 
         if options.action == "train":
             if options.config == None:
-                print('Bad options provided.')
+                logger.error('Bad options provided.')
                 parser.print_help()
+                exit(0)
             trainer = Trainer(os.path.abspath(options.model), os.path.abspath(options.data), config)
-        elif options.action == "test":
+        elif options.action == 'test':
             tester = Tester(os.path.abspath(options.model), os.path.abspath(options.data))
 
     except Exception as ex:
-        LOGGER.exception(ex)
+        logger.exception(ex)
