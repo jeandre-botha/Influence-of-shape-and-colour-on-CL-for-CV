@@ -10,6 +10,9 @@ from logger import logger
 from trainer import Trainer
 from tester import Tester
 
+import warnings
+warnings.filterwarnings("ignore")
+
 CONFIG_SCHEMA = {
     "type": "object",
     "properties": {
@@ -44,7 +47,7 @@ if __name__ == '__main__':
             type=str,
             nargs="?",
             required=True,
-            help='the path of training/testing',
+            help='the path of the dataset folder',
         )
         parser.add_argument(
             '-c',
@@ -57,12 +60,13 @@ if __name__ == '__main__':
 
         options = parser.parse_args()
 
-        if not file_exists(options.config):
-            logger.error('config file does not exist at location "'+ options.config +'"')
+        if options.action == "train" and options.config == None:
+            logger.error('Bad options provided.')
+            parser.print_help()
             exit(0)
 
-        if not file_exists(options.model):
-            logger.error('model does not exist at location "'+ options.model +'"')
+        if not file_exists(options.config):
+            logger.error('config file does not exist at location "'+ options.config +'"')
             exit(0)
 
         if not file_exists(options.data):
@@ -80,11 +84,8 @@ if __name__ == '__main__':
             exit(0)
 
         if options.action == "train":
-            if options.config == None:
-                logger.error('Bad options provided.')
-                parser.print_help()
-                exit(0)
             trainer = Trainer(os.path.abspath(options.model), os.path.abspath(options.data), config)
+            trainer.train()
         elif options.action == 'test':
             tester = Tester(os.path.abspath(options.model), os.path.abspath(options.data))
 
