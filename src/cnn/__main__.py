@@ -8,16 +8,18 @@ from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
 from logger import logger
 from trainer import Trainer
+from tester import Tester
 
 import warnings
-warnings.filterwarnings("ignore")
+warnings.filterwarnings('ignore')
 
 CONFIG_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "learning_rate": {"type": "number"}
+    'type': 'object',
+    'properties': {
+        'batch_size': {'type': 'number'},
+        'epochs': {'type': 'number'}
     },
-    "required": ["learning_rate"]
+    'required': ['batch_size', 'epochs']
 }
 
 if __name__ == '__main__':
@@ -27,7 +29,7 @@ if __name__ == '__main__':
             '-a',
             '--action',
             type=str,
-            nargs="?",
+            nargs='?',
             required=True,
             choices=['train', 'test'],
             help='the action that should be performed for a model',
@@ -36,7 +38,7 @@ if __name__ == '__main__':
             '-m',
             '--model',
             type=str,
-            nargs="?",
+            nargs='?',
             required=True,
             help='the path of the the model that should be used',
         )
@@ -44,7 +46,7 @@ if __name__ == '__main__':
             '-d',
             '--dataset',
             type=str,
-            nargs="?",
+            nargs='?',
             required=True,
             help='the name of the keras datasetr',
         )
@@ -52,14 +54,14 @@ if __name__ == '__main__':
             '-c',
             '--config',
             type=str,
-            nargs="?",
+            nargs='?',
             required=False,
             help='the path to the config file. Required when training',
         )
 
         options = parser.parse_args()
 
-        if options.action == "train" and options.config == None:
+        if options.action == 'train' and options.config == None:
             logger.error('Bad options provided.')
             parser.print_help()
             exit(0)
@@ -78,11 +80,12 @@ if __name__ == '__main__':
             logger.error('Invalid config file structure, err: ', err)
             exit(0)
 
-        if options.action == "train":
+        if options.action == 'train':
             trainer = Trainer(options.model, options.dataset, config)
             trainer.train()
         elif options.action == 'test':
-            raise NotImplementedError()
+            tester = Tester(options.model, options.dataset, config)
+            tester.test()
 
     except Exception as ex:
         logger.exception(ex)
