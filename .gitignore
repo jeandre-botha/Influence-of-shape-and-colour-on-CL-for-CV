@@ -133,3 +133,6 @@ models/*
 
 # data
 data/*
+
+# results
+results/*

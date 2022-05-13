@@ -8,7 +8,6 @@ from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
 from logger import logger
 from trainer import Trainer
-from tester import Tester
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -43,11 +42,11 @@ if __name__ == '__main__':
         )
         parser.add_argument(
             '-d',
-            '--data',
+            '--dataset',
             type=str,
             nargs="?",
             required=True,
-            help='the path of the dataset folder',
+            help='the name of the keras datasetr',
         )
         parser.add_argument(
             '-c',
@@ -69,10 +68,6 @@ if __name__ == '__main__':
             logger.error('config file does not exist at location "'+ options.config +'"')
             exit(0)
 
-        if not file_exists(options.data):
-            logger.error('data file does not exist at location "'+ options.data +'"')
-            exit(0)
-
         config = {}
         with open(options.config, 'r') as config_file:
             config = json.loads(config_file.read())
@@ -84,10 +79,10 @@ if __name__ == '__main__':
             exit(0)
 
         if options.action == "train":
-            trainer = Trainer(os.path.abspath(options.model), os.path.abspath(options.data), config)
+            trainer = Trainer(options.model, options.dataset, config)
             trainer.train()
         elif options.action == 'test':
-            tester = Tester(os.path.abspath(options.model), os.path.abspath(options.data))
+            raise NotImplementedError()
 
     except Exception as ex:
         logger.exception(ex)
