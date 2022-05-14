@@ -19,8 +19,10 @@ class Tester:
     def __init_model(self):
         model_path = os.path.join(models_dir, self.model_name)
         if file_exists(model_path):
+            logger.info('Loading model...')
             try:
                 self.model = tf.keras.models.load_model(model_path)
+                logger.info('Loading model done')
                 return
             except:
                raise ValueError('could not load model at "{}"'.format(model_path))
@@ -33,11 +35,17 @@ class Tester:
             return
 
         if result_path == None:
-            file_name = '{}_test_{}_result.txt'.format(self.model_name, str(datetime.now().timestamp()))
-            result_path = os.path.join(results_dir, file_name)
+            file_name = 'test_{}_result.txt'.format(str(datetime.now().timestamp()))
+            model_results_path =  os.path.join(results_dir, self.model_name)
+            os.makedirs(model_results_path, exist_ok=True)
+            result_path = os.path.join(model_results_path, file_name)
+        elif not file_exists(os.path.dirname(result_path)):
+            raise ValueError("specified path does not exist")
 
         with open(result_path, 'w') as result_file:
             result_file.write('test loss: {},  test acc: {}'.format(self.results[0], self.results[1]))
+
+        logger.info('Test results have been saved to "{}"'.format(result_path))
 
     def test(self):
         logger.info('Loading test data...')

@@ -28,12 +28,14 @@ class Trainer:
         model_path = os.path.join(models_dir, self.model_name)
         if file_exists(model_path):
             try:
+                logger.info('Loading existing model...')
                 self.model = tf.keras.models.load_model(model_path)
+                logger.info('Loading existing model done')
                 return
             except:
                 logger.warning('could not load model at "{}"'.format(model_path))
 
-        logger.info('Initializing new model')
+        logger.info('Initializing new model...')
 
          # create base ResNet model
         base_model = tf.keras.applications.resnet50.ResNet50(
@@ -55,14 +57,20 @@ class Trainer:
 
         self.model = model
 
+        logger.info('Initializing new model done')
+
     def save_summary(self, result_path = None):
         if self.history == None:
             logger.error('no available training history found, please run train first')
             return
 
         if result_path == None:
-            file_name = '{}_train_{}_plot.png'.format(self.model_name, str(datetime.now().timestamp()))
-            result_path = os.path.join(results_dir, file_name)
+            file_name = 'train_{}_result.txt'.format(str(datetime.now().timestamp()))
+            model_results_path =  os.path.join(results_dir, self.model_name)
+            os.makedirs(model_results_path, exist_ok=True)
+            result_path = os.path.join(model_results_path, file_name)
+        elif not file_exists(os.path.dirname(result_path)):
+            raise ValueError("specified path does not exist")
 
         pyplot.subplot(211)
         pyplot.title('Cross Entropy Loss')
