@@ -76,11 +76,11 @@ class Trainer:
 
         pyplot.subplot(211)
         pyplot.title('Cross Entropy Loss')
-        pyplot.plot(self.history.history['loss'], color='blue', label='train')
+        pyplot.plot(self.history['loss'], color='blue', label='train')
         # pyplot.plot(self.history.history['val_loss'], color='orange', label='test')
         pyplot.subplot(212)
         pyplot.title('Classification Accuracy')
-        pyplot.plot(self.history.history['accuracy'], color='blue', label='train')
+        pyplot.plot(self.history['accuracy'], color='blue', label='train')
         # pyplot.plot(self.history.history['val_accuracy'], color='orange', label='test')
         pyplot.savefig(result_path)
         logger.info('Training results have been saved to "{}"'.format(result_path))
