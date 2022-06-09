@@ -53,9 +53,11 @@ class Trainer:
 
         # build final model
         model = Model(inputs = base_model.input, outputs = predictions)
-        model.compile(optimizer='adam', loss=losses.categorical_crossentropy, metrics=['accuracy'])
+        # model.compile(optimizer='adam', loss=losses.categorical_crossentropy, metrics=['accuracy'])
 
         self.model = model
+        self.loss_fn = tf.keras.losses.categorical_crossentropy 
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.config['learning_rate'])
 
         logger.info('Initializing new model done')
 
@@ -102,13 +104,70 @@ class Trainer:
         logger.info('Loading training data done')
 
         logger.info('Training model...')
-        self.history = self.model.fit(
-            train_x,
-            train_y,
-            epochs=self.config['epochs'],
-            batch_size=self.config['batch_size'],
-            verbose=1
-        )
+
+        # Prepare the training dataset.
+        batch_size = self.config['batch_size']
+        train_dataset = tf.data.Dataset.from_tensor_slices((train_x, train_y))
+        train_dataset = train_dataset.shuffle(buffer_size=1024).batch(batch_size)
+
+        history = {
+            "loss": [],
+            "accuracy": []
+        }
+
+        for epoch in range(self.config['epochs']):
+            print("\nStart of epoch %d" % (epoch,))
+            epoch_loss_avg = tf.keras.metrics.Mean()
+            epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
+
+            # Iterate over the batches of the dataset.
+            # TODO: apply curriculum here
+            for step, (x_batch_train, y_batch_train) in enumerate(train_dataset):
+
+                # Open a GradientTape to record the operations run
+                # during the forward pass, which enables auto-differentiation.
+                with tf.GradientTape() as tape:
+
+                    # Run the forward pass of the layer.
+                    # The operations that the layer applies
+                    # to its inputs are going to be recorded
+                    # on the GradientTape.
+                    logits = self.model(x_batch_train, training=True)  # Logits for this minibatch
+
+                    # Compute the loss value for this minibatch.
+                    loss_value = self.loss_fn(y_batch_train, logits)
+                    epoch_loss_avg.update_state(loss_value)
+                    epoch_accuracy.update_state(y_batch_train, logits)
+
+                # Use the gradient tape to automatically retrieve
+                # the gradients of the trainable variables with respect to the loss.
+                grads = tape.gradient(loss_value, self.model.trainable_weights)
+
+                # Run one step of gradient descent by updating
+                # the value of the variables to minimize the loss.
+                self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
+
+                # Log every 50 batches.
+                if step % 50 == 0:
+                    print(
+                        "Step {:03d}: Loss: {:.3f}, Accuracy: {:.3%}".format(
+                            step,
+                            epoch_loss_avg.result(),
+                            epoch_accuracy.result()
+                        )
+                    )
+            history["loss"].append(epoch_loss_avg.result())
+            history["accuracy"].append(epoch_accuracy.result())
+
+            print(
+                "Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}".format(
+                    epoch,
+                    epoch_loss_avg.result(),
+                    epoch_accuracy.result()
+                )
+            )
+
+        self.history = history
 
         logger.info('Training model done')
 
