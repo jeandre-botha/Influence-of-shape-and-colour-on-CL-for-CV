@@ -23,7 +23,6 @@ class Trainer:
         self.config = config
         self.model = None
         self.history = None
-        self.current_epoch = None
         self.__init_model()
 
     
@@ -96,14 +95,14 @@ class Trainer:
         self.model.save(model_path)
         logger.info('Model saved to destination: "{}"'.format(model_path))
 
-    def augment(self, tensor):
+    def augment(self, tensor, epoch):
         tensor = tf.cast(x=tensor, dtype=tf.float32)
 
         # apply curriculum based augmentations
         if 'curriculum' in self.config and self.config['curriculum']['name'] == 'colour':
             parameters =  self.config['curriculum']['parameters']
 
-            t = self.current_epoch
+            t = epoch
             t_g = parameters['t_g']
             c_0 = parameters['c_0']
             c_t = min(1, t*((1-c_0)/t_g)+c_0)
@@ -144,10 +143,9 @@ class Trainer:
             "loss": [],
             "accuracy": []
         }
-        self.current_epoch = None
+
         for epoch in range(self.config['epochs']):
             print("\nStart of epoch %d" % (epoch,))
-            self.current_epoch = epoch
             epoch_loss_avg = tf.keras.metrics.Mean()
             epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
 
@@ -159,7 +157,7 @@ class Trainer:
                 with tf.GradientTape() as tape:
 
                     # augment training images
-                    x_batch_train = self.augment(x_batch_train)
+                    x_batch_train = self.augment(x_batch_train, epoch)
 
                     # Run the forward pass of the layer.
                     # The operations that the layer applies
