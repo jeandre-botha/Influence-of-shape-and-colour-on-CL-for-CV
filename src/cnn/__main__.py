@@ -17,9 +17,11 @@ CONFIG_SCHEMA = {
     'type': 'object',
     'properties': {
         'batch_size': {'type': 'number'},
-        'epochs': {'type': 'number'}
+        'epochs': {'type': 'number'},
+        'learning_rate': {'type': 'number'},
+        'curriculum': {'type': 'object'},
     },
-    'required': ['batch_size', 'epochs']
+    'required': ['batch_size', 'epochs', 'learning_rate']
 }
 
 if __name__ == '__main__':

@@ -1,10 +1,12 @@
 import os
+import math   
 import tensorflow as tf
 from tensorflow.keras import datasets, layers, models, losses, Model
 import numpy as np
 from matplotlib import pyplot
 from datetime import datetime
 from os.path import exists as file_exists
+from PIL import Image
 
 from logger import logger
 from dataset import Dataset
@@ -21,6 +23,7 @@ class Trainer:
         self.config = config
         self.model = None
         self.history = None
+        self.current_epoch = None
         self.__init_model()
 
     
@@ -58,7 +61,6 @@ class Trainer:
         self.model = model
         self.loss_fn = tf.keras.losses.categorical_crossentropy 
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.config['learning_rate'])
-
         logger.info('Initializing new model done')
 
     def save_summary(self, result_path = None):
@@ -94,7 +96,35 @@ class Trainer:
         self.model.save(model_path)
         logger.info('Model saved to destination: "{}"'.format(model_path))
 
+    def augment(self, tensor):
+        tensor = tf.cast(x=tensor, dtype=tf.float32)
 
+        # apply curriculum based augmentations
+        if 'curriculum' in self.config and self.config['curriculum']['name'] == 'colour':
+            parameters =  self.config['curriculum']['parameters']
+
+            t = self.current_epoch
+            t_g = parameters['t_g']
+            c_0 = parameters['c_0']
+            c_t = min(1, t*((1-c_0)/t_g)+c_0)
+            total_colours = 256
+            available_colours = math.ceil(c_t*total_colours)            
+
+            result_images = []
+            for t in tensor:
+                img = tf.keras.preprocessing.image.array_to_img(t)
+                img = img.convert('P', palette=Image.ADAPTIVE, colors=available_colours)
+                img = img.convert('RGB', palette=Image.ADAPTIVE, colors=available_colours)
+                result_images.append(tf.keras.preprocessing.image.img_to_array(img))
+
+            tensor = np.array(result_images)
+
+        # apply remaining augmentations
+        tensor = tf.divide(x=tensor, y=tf.constant(255.))
+        tensor = tf.image.random_flip_left_right(image=tensor)
+        # tensor = tf.image.random_brightness(image=tensor, max_delta=2e-1)
+        # tensor = tf.image.random_crop(value=tensor, size=(64, 64, 1))
+        return tensor
 
     def train(self):
         logger.info('Loading training data...')
@@ -114,19 +144,22 @@ class Trainer:
             "loss": [],
             "accuracy": []
         }
-
+        self.current_epoch = None
         for epoch in range(self.config['epochs']):
             print("\nStart of epoch %d" % (epoch,))
+            self.current_epoch = epoch
             epoch_loss_avg = tf.keras.metrics.Mean()
             epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
 
             # Iterate over the batches of the dataset.
-            # TODO: apply curriculum here
             for step, (x_batch_train, y_batch_train) in enumerate(train_dataset):
 
                 # Open a GradientTape to record the operations run
                 # during the forward pass, which enables auto-differentiation.
                 with tf.GradientTape() as tape:
+
+                    # augment training images
+                    x_batch_train = self.augment(x_batch_train)
 
                     # Run the forward pass of the layer.
                     # The operations that the layer applies
@@ -173,3 +206,32 @@ class Trainer:
 
         self.save_model()
         self.save_summary()
+
+
+
+
+# import os
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# import tensorflow as tf
+# import tensorflow_datasets as tfds
+
+# [train_set_raw] = tfds.load('cats_vs_dogs', split=['train[:100]'],  as_supervised=True)
+
+
+# def augment(tensor):
+#     tensor = tf.cast(x=tensor, dtype=tf.float32)
+#     tensor = tf.image.rgb_to_grayscale(images=tensor)
+#     tensor = tf.image.resize(images=tensor, size=(96, 96))
+#     tensor = tf.divide(x=tensor, y=tf.constant(255.))
+#     tensor = tf.image.random_flip_left_right(image=tensor)
+#     tensor = tf.image.random_brightness(image=tensor, max_delta=2e-1)
+#     tensor = tf.image.random_crop(value=tensor, size=(64, 64, 1))
+#     return tensor
+
+
+# train_set_raw = train_set_raw.shuffle(128).map(lambda x, y: (augment(x), y)).batch(16)
+
+# import matplotlib.pyplot as plt
+
+# plt.imshow((next(iter(train_set_raw))[0][0][..., 0].numpy()*255).astype(int))
+# plt.show()
