@@ -41,7 +41,7 @@ if __name__ == '__main__':
             '--model',
             type=str,
             nargs='?',
-            required=True,
+            required=False,
             help='the path of the the model that should be used',
         )
         parser.add_argument(
@@ -86,6 +86,9 @@ if __name__ == '__main__':
             trainer = Trainer(options.model, options.dataset, config)
             trainer.train()
         elif options.action == 'test':
+            if options.model == None or options.model == "":
+                logger.error('Model option required for testing.')
+                exit(0)
             tester = Tester(options.model, options.dataset, config)
             tester.test()
 

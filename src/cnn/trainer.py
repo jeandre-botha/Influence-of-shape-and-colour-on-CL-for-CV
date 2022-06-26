@@ -59,7 +59,10 @@ class Trainer:
 
         self.model = model
         self.loss_fn = tf.keras.losses.categorical_crossentropy 
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.config['learning_rate'])
+        # self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.config['learning_rate'])
+        self.optimizer = tf.keras.optimizers.SGD(
+            learning_rate=self.config['learning_rate'],
+            momentum=self.config['momentum'])
         logger.info('Initializing new model done')
 
     def save_summary(self, result_path = None):
@@ -68,7 +71,7 @@ class Trainer:
             return
 
         if result_path == None:
-            file_name = 'train_{}_result.txt'.format(str(datetime.now().timestamp()))
+            file_name = 'train_{}_result.png'.format(str(datetime.now().timestamp()))
             model_results_path =  os.path.join(results_dir, self.model_name)
             os.makedirs(model_results_path, exist_ok=True)
             result_path = os.path.join(model_results_path, file_name)
@@ -120,7 +123,7 @@ class Trainer:
 
         # apply remaining augmentations
         tensor = tf.divide(x=tensor, y=tf.constant(255.))
-        tensor = tf.image.random_flip_left_right(image=tensor)
+        # tensor = tf.image.random_flip_left_right(image=tensor)
         # tensor = tf.image.random_brightness(image=tensor, max_delta=2e-1)
         # tensor = tf.image.random_crop(value=tensor, size=(64, 64, 1))
         return tensor

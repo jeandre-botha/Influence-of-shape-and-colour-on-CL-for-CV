@@ -26,7 +26,7 @@ class Dataset:
         self.x_test = x_test
         self.y_test = y_test
 
-    def get_train_data(self, normalize = True):
+    def get_train_data(self, normalize = False):
         train_data = self.x_train
         if normalize:
             train_data =  train_data.astype('float32')
@@ -34,7 +34,7 @@ class Dataset:
         
         return train_data
 
-    def get_test_data(self, normalize = True):
+    def get_test_data(self, normalize = False):
         test_data = self.x_test
         if normalize:
             test_data =  test_data.astype('float32')

@@ -1,12 +1,6 @@
 {
-    "batch_size": 64,
-    "epochs": 2,
+    "batch_size": 256,
+    "epochs": 5,
     "learning_rate": 0.001,
-    "curriculum": {
-        "name" : "colour",
-        "parameters" : {
-            "t_g": 10,
-            "c_0": 0.01
-        }
-    }
+    "momentum": 0.9
 }
