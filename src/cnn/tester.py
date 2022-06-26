@@ -50,7 +50,7 @@ class Tester:
     def test(self):
         logger.info('Loading test data...')
         dataset = Dataset(self.dataset_name)
-        test_x = dataset.get_test_data()
+        test_x = dataset.get_test_data(normalize=True)
         test_y = dataset.get_test_labels()
         logger.info('Loading test data done')
 

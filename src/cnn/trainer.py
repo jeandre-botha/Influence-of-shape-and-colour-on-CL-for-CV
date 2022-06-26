@@ -11,6 +11,7 @@ from PIL import Image
 from logger import logger
 from dataset import Dataset
 from constants import results_dir, models_dir
+import model_utils
 
 tf.get_logger().setLevel('ERROR')
 tf.autograph.set_verbosity(1)
@@ -58,11 +59,9 @@ class Trainer:
         # model.compile(optimizer='adam', loss=losses.categorical_crossentropy, metrics=['accuracy'])
 
         self.model = model
-        self.loss_fn = tf.keras.losses.categorical_crossentropy 
+        self.loss_fn = model_utils.get_loss_fn(self.config)
         # self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.config['learning_rate'])
-        self.optimizer = tf.keras.optimizers.SGD(
-            learning_rate=self.config['learning_rate'],
-            momentum=self.config['momentum'])
+        self.optimizer = model_utils.get_optimizer(self.config)
         logger.info('Initializing new model done')
 
     def save_summary(self, result_path = None):
@@ -95,6 +94,11 @@ class Trainer:
             model_path = os.path.join(models_dir, self.model_name)
 
         logger.info('Saving model...')
+        self.model.compile(
+            optimizer=self.optimizer,
+            loss=self.loss_fn,
+            metrics=['accuracy']
+        )
         self.model.save(model_path)
         logger.info('Model saved to destination: "{}"'.format(model_path))
 
