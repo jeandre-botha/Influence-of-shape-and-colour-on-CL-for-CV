@@ -57,6 +57,13 @@ class Tester:
         logger.info('Evaluating model...')
         self.results = self.model.evaluate(test_x, test_y, batch_size=self.config['batch_size'])
         logger.info('Evaluating model done')
-        logger.info('Evaluation results: test loss: {},  test acc: {}'.format(self.results[0], self.results[1]))
+
+        print(
+            "Loss: {:.3f}, Accuracy: {:.3%}".format(
+                self.results[0],
+                self.results[1]
+            )
+        )
 
         self.save_results()
+        

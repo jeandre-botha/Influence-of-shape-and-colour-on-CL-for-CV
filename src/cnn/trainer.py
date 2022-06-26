@@ -56,12 +56,13 @@ class Trainer:
 
         # build final model
         model = Model(inputs = base_model.input, outputs = predictions)
-        # model.compile(optimizer='adam', loss=losses.categorical_crossentropy, metrics=['accuracy'])
 
         self.model = model
-        self.loss_fn = model_utils.get_loss_fn(self.config)
-        # self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.config['learning_rate'])
-        self.optimizer = model_utils.get_optimizer(self.config)
+        self.loss_fn = tf.keras.losses.categorical_crossentropy
+        self.optimizer = tf.keras.optimizers.SGD(
+            learning_rate=self.config['learning_rate'],
+            momentum=self.config['momentum']
+        )
         logger.info('Initializing new model done')
 
     def save_summary(self, result_path = None):
@@ -80,11 +81,9 @@ class Trainer:
         pyplot.subplot(211)
         pyplot.title('Cross Entropy Loss')
         pyplot.plot(self.history['loss'], color='blue', label='train')
-        # pyplot.plot(self.history.history['val_loss'], color='orange', label='test')
         pyplot.subplot(212)
         pyplot.title('Classification Accuracy')
         pyplot.plot(self.history['accuracy'], color='blue', label='train')
-        # pyplot.plot(self.history.history['val_accuracy'], color='orange', label='test')
         pyplot.savefig(result_path)
         logger.info('Training results have been saved to "{}"'.format(result_path))
         pyplot.close()
@@ -211,32 +210,3 @@ class Trainer:
 
         self.save_model()
         self.save_summary()
-
-
-
-
-# import os
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-# import tensorflow as tf
-# import tensorflow_datasets as tfds
-
-# [train_set_raw] = tfds.load('cats_vs_dogs', split=['train[:100]'],  as_supervised=True)
-
-
-# def augment(tensor):
-#     tensor = tf.cast(x=tensor, dtype=tf.float32)
-#     tensor = tf.image.rgb_to_grayscale(images=tensor)
-#     tensor = tf.image.resize(images=tensor, size=(96, 96))
-#     tensor = tf.divide(x=tensor, y=tf.constant(255.))
-#     tensor = tf.image.random_flip_left_right(image=tensor)
-#     tensor = tf.image.random_brightness(image=tensor, max_delta=2e-1)
-#     tensor = tf.image.random_crop(value=tensor, size=(64, 64, 1))
-#     return tensor
-
-
-# train_set_raw = train_set_raw.shuffle(128).map(lambda x, y: (augment(x), y)).batch(16)
-
-# import matplotlib.pyplot as plt
-
-# plt.imshow((next(iter(train_set_raw))[0][0][..., 0].numpy()*255).astype(int))
-# plt.show()

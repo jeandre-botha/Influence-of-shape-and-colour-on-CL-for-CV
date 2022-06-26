@@ -19,6 +19,7 @@ class Dataset:
             raise ValueError('invalid dataset: "{}"'.format(dataset_name))
 
         # load dataset
+        # tf guarantees that the splits are deterministic
         (x_train, y_train), (x_test, y_test) = self.dataset_map[dataset_name].load_data()
 
         self.x_train = x_train
