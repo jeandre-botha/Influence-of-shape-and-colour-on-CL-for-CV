@@ -4,7 +4,6 @@ from os.path import exists as file_exists
 from datetime import datetime
 
 from logger import logger
-from constants import models_dir, results_dir
 from dataset import Dataset
 
 class Tester:
@@ -14,10 +13,12 @@ class Tester:
         self.config = config
         self.model = None
         self.results = None
+        self.models_dir = os.path.abspath(os.path.join(self.config['root_path'], 'models'))
+        self.results_dir = os.path.abspath(os.path.join(self.config['root_path'], 'results'))
         self.__init_model()
 
     def __init_model(self):
-        model_path = os.path.join(models_dir, self.model_name)
+        model_path = os.path.join(self.models_dir, self.model_name)
         if file_exists(model_path):
             logger.info('Loading model...')
             try:
@@ -36,7 +37,7 @@ class Tester:
 
         if result_path == None:
             file_name = 'test_{}_result.txt'.format(str(datetime.now().timestamp()))
-            model_results_path =  os.path.join(results_dir, self.model_name)
+            model_results_path =  os.path.join(self.results_dir, self.model_name)
             os.makedirs(model_results_path, exist_ok=True)
             result_path = os.path.join(model_results_path, file_name)
         elif not file_exists(os.path.dirname(result_path)):

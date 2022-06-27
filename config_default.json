@@ -2,5 +2,7 @@
     "batch_size": 256,
     "epochs": 90,
     "learning_rate": 0.001,
-    "momentum": 0.9
+    "momentum": 0.9,
+    "weight_decay": 1e-5,
+    "root_path" : "./"
 }

@@ -8,6 +8,7 @@ jsonschema = "*"
 numpy = "*"
 tensorflow = "*"
 matplotlib = "*"
+tensorflow-addons = "*"
 
 [dev-packages]
 

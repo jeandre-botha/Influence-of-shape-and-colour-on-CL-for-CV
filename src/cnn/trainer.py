@@ -1,6 +1,7 @@
 import os
 import math   
 import tensorflow as tf
+import tensorflow_addons as tfa
 from tensorflow.keras import datasets, layers, models, losses, Model
 import numpy as np
 from matplotlib import pyplot
@@ -10,8 +11,6 @@ from PIL import Image
 
 from logger import logger
 from dataset import Dataset
-from constants import results_dir, models_dir
-import model_utils
 
 tf.get_logger().setLevel('ERROR')
 tf.autograph.set_verbosity(1)
@@ -24,11 +23,13 @@ class Trainer:
         self.config = config
         self.model = None
         self.history = None
+        self.models_dir = os.path.abspath(os.path.join(self.config['root_path'], 'models'))
+        self.results_dir = os.path.abspath(os.path.join(self.config['root_path'], 'results'))
         self.__init_model()
 
     
     def __init_model(self):
-        model_path = os.path.join(models_dir, self.model_name)
+        model_path = os.path.join(self.models_dir, self.model_name)
         if file_exists(model_path):
             try:
                 logger.info('Loading existing model...')
@@ -63,6 +64,33 @@ class Trainer:
             learning_rate=self.config['learning_rate'],
             momentum=self.config['momentum']
         )
+
+        learning_rate = self.config['learning_rate'] if 'learning_rate' in self.config else 0.1
+        momentum = self.config['momentum'] if 'momentum' in self.config else 0.0
+        weight_decay = self.config['weight_decay'] if 'weight_decay' in self.config else 0.0
+        # lr_decay = self.config['lr_decay'] if 'lr_decay' in self.config else None        
+
+        # lr_schedule = learning_rate
+        # if lr_decay != None:
+        #     logger.debug("Adding exponential decay lr schedule")
+        #     decay_rate = lr_decay['decay_rate'] if 'decay_rate' in lr_decay else 0.00001
+        #     decay_epochs = lr_decay['decay_epochs'] if 'decay_rate' in lr_decay else 10
+
+        #     decay_steps = decay_epochs * (len(train_x) / self.config['batch_size'])
+
+        #     lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        #         learning_rate,
+        #         decay_steps=decay_steps,
+        #         decay_rate=decay_rate,
+        #         staircase=False
+        #     )
+
+        self.optimizer = tfa.optimizers.SGDW(
+            weight_decay = weight_decay,
+            learning_rate = learning_rate,
+            momentum = momentum,
+        )
+
         logger.info('Initializing new model done')
 
     def save_summary(self, result_path = None):
@@ -72,7 +100,7 @@ class Trainer:
 
         if result_path == None:
             file_name = 'train_{}_result.png'.format(str(datetime.now().timestamp()))
-            model_results_path =  os.path.join(results_dir, self.model_name)
+            model_results_path =  os.path.join(self.results_dir, self.model_name)
             os.makedirs(model_results_path, exist_ok=True)
             result_path = os.path.join(model_results_path, file_name)
         elif not file_exists(os.path.dirname(result_path)):
@@ -90,7 +118,7 @@ class Trainer:
 
     def save_model(self, model_path = None):
         if model_path == None:
-            model_path = os.path.join(models_dir, self.model_name)
+            model_path = os.path.join(self.models_dir, self.model_name)
 
         logger.info('Saving model...')
         self.model.compile(
