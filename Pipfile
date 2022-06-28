@@ -10,6 +10,8 @@ tensorflow = "*"
 matplotlib = "*"
 tensorflow-addons = "*"
 tensorflow-datasets = "*"
+opencv-python = "*"
+albumentations = "*"
 
 [dev-packages]
 

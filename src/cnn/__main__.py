@@ -36,6 +36,17 @@ CONFIG_SCHEMA = {
     'required': ['batch_size', 'epochs', 'learning_rate', 'momentum', 'weight_decay']
 }
 
+def train(options, config):
+    trainer = Trainer(options.model, options.dataset, config)
+    trainer.train()
+
+def test(options, config):
+    if options.model == None or options.model == "":
+        logger.error('Model option required for testing.')
+        exit(0)
+    tester = Tester(options.model, options.dataset, config)
+    tester.test()
+
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser(description='''Utility for training and testing a CNN''')
@@ -45,7 +56,7 @@ if __name__ == '__main__':
             type=str,
             nargs='?',
             required=True,
-            choices=['train', 'test'],
+            choices=['train', 'test', 'both'],
             help='the action that should be performed for a model',
         )
         parser.add_argument(
@@ -75,7 +86,7 @@ if __name__ == '__main__':
 
         options = parser.parse_args()
 
-        if options.action == 'train' and options.config == None:
+        if options.config == None:
             logger.error('Bad options provided.')
             parser.print_help()
             exit(0)
@@ -95,14 +106,12 @@ if __name__ == '__main__':
             exit(0)
 
         if options.action == 'train':
-            trainer = Trainer(options.model, options.dataset, config)
-            trainer.train()
+            train(options, config)
         elif options.action == 'test':
-            if options.model == None or options.model == "":
-                logger.error('Model option required for testing.')
-                exit(0)
-            tester = Tester(options.model, options.dataset, config)
-            tester.test()
+            test(options, config)
+        elif options.action == 'both':
+            train(options, config)
+            test(options, config)
 
     except Exception as ex:
         logger.exception(ex)

@@ -51,12 +51,15 @@ class Tester:
     def test(self):
         logger.info('Loading test data...')
         dataset = Dataset(self.dataset_name)
-        test_x = dataset.get_test_data(normalize=True)
+        test_x = dataset.get_test_data()
         test_y = dataset.get_test_labels()
+
+        test_loader = Dataloader(test_x, test_y, self.config, "test")
+
         logger.info('Loading test data done')
 
         logger.info('Evaluating model...')
-        self.results = self.model.evaluate(test_x, test_y, batch_size=self.config['batch_size'])
+        self.results = self.model.evaluate(test_loader, batch_size=self.config['batch_size'])
         logger.info('Evaluating model done')
 
         print(
