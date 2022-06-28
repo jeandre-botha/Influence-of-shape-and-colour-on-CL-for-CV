@@ -16,6 +16,69 @@ tf.get_logger().setLevel('ERROR')
 tf.autograph.set_verbosity(1)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+class CustomModel(tf.keras.Model):
+    def __init__(self, config, steps_per_epoch, *args, **kwargs):
+        super(CustomModel, self).__init__(*args, **kwargs)
+        self.config = config
+        self.steps_per_epoch = steps_per_epoch
+
+        self.steps_completed = 0
+
+
+    def train_step(self, data):
+        # Unpack the data. Its structure depends on your model and
+        # on what you pass to `fit()`.
+        x, y = data
+
+        x_aug = self.augment(x)
+        
+        with tf.GradientTape() as tape:
+            y_pred = self(x_aug, training=True)  # Forward pass
+            # Compute the loss value
+            # (the loss function is configured in `compile()`)
+            loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+
+        # Compute gradients
+        trainable_vars = self.trainable_variables
+        gradients = tape.gradient(loss, trainable_vars)
+        # Update weights
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+        # Update metrics (includes the metric that tracks the loss)
+        self.compiled_metrics.update_state(y, y_pred)
+        # Return a dict mapping metric names to current value
+        self.steps_completed += 1
+        return {m.name: m.result() for m in self.metrics}
+
+
+    def augment(self, tensor):
+        tensor = tf.cast(x=tensor, dtype=tf.float32)
+
+        # apply curriculum based augmentations
+        if 'curriculum' in self.config and self.config['curriculum']['name'] == 'colour':
+            parameters =  self.config['curriculum']['parameters']
+
+            t = math.floor(self.steps_completed/self.steps_per_epoch)
+            t_g = parameters['t_g']
+            c_0 = parameters['c_0']
+            c_t = min(1, t*((1-c_0)/t_g)+c_0)
+            total_colours = 256
+            available_colours = math.ceil(c_t*total_colours)            
+
+            result_images = []
+            for t in tensor:
+                img = tf.keras.preprocessing.image.array_to_img(t)
+                img = img.convert('P', palette=Image.ADAPTIVE, colors=available_colours)
+                img = img.convert('RGB', palette=Image.ADAPTIVE, colors=available_colours)
+                result_images.append(tf.keras.preprocessing.image.img_to_array(img))
+
+            tensor = np.array(result_images)
+
+        # apply remaining augmentations
+        tensor = tf.divide(x=tensor, y=tf.constant(255.))
+        tensor = tf.image.random_flip_left_right(image=tensor)
+        # tensor = tf.image.random_brightness(image=tensor, max_delta=2e-1)
+        return tensor
+
 class Trainer:
     def __init__(self, model_name, dataset, config):
         self.model_name = model_name
@@ -25,7 +88,18 @@ class Trainer:
         self.history = None
         self.models_dir = os.path.abspath(os.path.join(self.config['root_path'], 'models'))
         self.results_dir = os.path.abspath(os.path.join(self.config['root_path'], 'results'))
+
+        self.train_x = None
+        self.train_y = None
+        self.__init_data()
         self.__init_model()
+
+    def __init_data(self):
+        logger.info('Loading training data...')
+        self.dataset = Dataset(self.dataset_name)
+        self.train_x = self.dataset.get_train_data(normalize=False)
+        self.train_y = self.dataset.get_train_labels()
+        logger.info('Loading training data done')
 
     
     def __init_model(self):
@@ -42,41 +116,43 @@ class Trainer:
         logger.info('Initializing new model...')
 
          # create base ResNet model
-        base_model = tf.keras.applications.resnet50.ResNet50(
-            include_top=False,
+        base_model = tf.keras.applications.resnet_v2.ResNet50V2(
+            include_top=True,
+            weights = None,
             input_tensor=None,
             input_shape=(32, 32, 3),
             pooling=None,
-            classes=1000,
+            classes=100,
+            classifier_activation='softmax'
         )
 
         # add top (dense) layer
-        x = layers.Flatten()(base_model.output)
-        x = layers.Dense(1000, activation='relu')(x)
-        predictions = layers.Dense(100, activation = 'softmax')(x)
+        # x = layers.Flatten()(base_model.output)
+        # x = layers.Dense(100, activation='relu')(x)
+        # predictions = layers.Dense(100, activation = 'softmax')(x)
+
+        steps_per_epoch = math.ceil((len(self.train_x) / self.config['batch_size']))
 
         # build final model
-        model = Model(inputs = base_model.input, outputs = predictions)
+        model = CustomModel(
+            inputs = base_model.input,
+            outputs = base_model.output,
+            config = self.config,
+            steps_per_epoch = steps_per_epoch)
 
         self.model = model
-        self.loss_fn = tf.keras.losses.categorical_crossentropy
-        self.optimizer = tf.keras.optimizers.SGD(
-            learning_rate=self.config['learning_rate'],
-            momentum=self.config['momentum']
-        )
 
-        learning_rate = self.config['learning_rate'] if 'learning_rate' in self.config else 0.1
-        momentum = self.config['momentum'] if 'momentum' in self.config else 0.0
-        weight_decay = self.config['weight_decay'] if 'weight_decay' in self.config else 0.0
-        # lr_decay = self.config['lr_decay'] if 'lr_decay' in self.config else None        
+        learning_rate = self.config['learning_rate']
+        weight_decay = self.config['weight_decay']
+        lr_decay = self.config['lr_decay'] if 'lr_decay' in self.config else None       
 
-        # lr_schedule = learning_rate
+        lr_schedule = learning_rate
         # if lr_decay != None:
         #     logger.debug("Adding exponential decay lr schedule")
-        #     decay_rate = lr_decay['decay_rate'] if 'decay_rate' in lr_decay else 0.00001
-        #     decay_epochs = lr_decay['decay_epochs'] if 'decay_rate' in lr_decay else 10
+        #     decay_rate = lr_decay['decay_rate']
+        #     decay_epochs = lr_decay['decay_epochs']
 
-        #     decay_steps = decay_epochs * (len(train_x) / self.config['batch_size'])
+        #     decay_steps = decay_epochs * steps_per_epoch
 
         #     lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
         #         learning_rate,
@@ -85,10 +161,17 @@ class Trainer:
         #         staircase=False
         #     )
 
-        self.optimizer = tfa.optimizers.SGDW(
+        optimizer = tfa.optimizers.SGDW(
             weight_decay = weight_decay,
-            learning_rate = learning_rate,
-            momentum = momentum,
+            learning_rate = lr_schedule,
+            nesterov = self.config['nesterov'],
+            momentum = self.config['momentum'],
+        )
+
+        self.model.compile(
+            optimizer=optimizer,
+            loss=tf.keras.losses.categorical_crossentropy,
+            metrics=['accuracy']
         )
 
         logger.info('Initializing new model done')
@@ -108,10 +191,10 @@ class Trainer:
 
         pyplot.subplot(211)
         pyplot.title('Cross Entropy Loss')
-        pyplot.plot(self.history['loss'], color='blue', label='train')
+        pyplot.plot(self.history.history['loss'], color='blue', label='train')
         pyplot.subplot(212)
         pyplot.title('Classification Accuracy')
-        pyplot.plot(self.history['accuracy'], color='blue', label='train')
+        pyplot.plot(self.history.history['accuracy'], color='blue', label='train')
         pyplot.savefig(result_path)
         logger.info('Training results have been saved to "{}"'.format(result_path))
         pyplot.close()
@@ -121,116 +204,43 @@ class Trainer:
             model_path = os.path.join(self.models_dir, self.model_name)
 
         logger.info('Saving model...')
-        self.model.compile(
-            optimizer=self.optimizer,
-            loss=self.loss_fn,
-            metrics=['accuracy']
-        )
+
         self.model.save(model_path)
         logger.info('Model saved to destination: "{}"'.format(model_path))
 
-    def augment(self, tensor, epoch):
-        tensor = tf.cast(x=tensor, dtype=tf.float32)
-
-        # apply curriculum based augmentations
-        if 'curriculum' in self.config and self.config['curriculum']['name'] == 'colour':
-            parameters =  self.config['curriculum']['parameters']
-
-            t = epoch
-            t_g = parameters['t_g']
-            c_0 = parameters['c_0']
-            c_t = min(1, t*((1-c_0)/t_g)+c_0)
-            total_colours = 256
-            available_colours = math.ceil(c_t*total_colours)            
-
-            result_images = []
-            for t in tensor:
-                img = tf.keras.preprocessing.image.array_to_img(t)
-                img = img.convert('P', palette=Image.ADAPTIVE, colors=available_colours)
-                img = img.convert('RGB', palette=Image.ADAPTIVE, colors=available_colours)
-                result_images.append(tf.keras.preprocessing.image.img_to_array(img))
-
-            tensor = np.array(result_images)
-
-        # apply remaining augmentations
-        tensor = tf.divide(x=tensor, y=tf.constant(255.))
-        # tensor = tf.image.random_flip_left_right(image=tensor)
-        # tensor = tf.image.random_brightness(image=tensor, max_delta=2e-1)
-        # tensor = tf.image.random_crop(value=tensor, size=(64, 64, 1))
-        return tensor
-
     def train(self):
-        logger.info('Loading training data...')
-        dataset = Dataset(self.dataset_name)
-        train_x = dataset.get_train_data()
-        train_y = dataset.get_train_labels()
-        logger.info('Loading training data done')
-
         logger.info('Training model...')
+        logger.info('Config: ', self.config)
+
 
         # Prepare the training dataset.
         batch_size = self.config['batch_size']
+
+        validation_size = math.floor(len(self.train_x)*0.1)
+
+        train_x = self.train_x[:-validation_size]
+        train_y = self.train_y[:-validation_size]
+        val_x  = self.train_x[-validation_size:]
+        val_y  = self.train_y[-validation_size:]
+
         train_dataset = tf.data.Dataset.from_tensor_slices((train_x, train_y))
         train_dataset = train_dataset.shuffle(buffer_size=1024).batch(batch_size)
 
-        history = {
-            "loss": [],
-            "accuracy": []
-        }
 
-        for epoch in range(self.config['epochs']):
-            print("\nStart of epoch %d" % (epoch,))
-            epoch_loss_avg = tf.keras.metrics.Mean()
-            epoch_accuracy = tf.keras.metrics.CategoricalAccuracy()
+        def MultiStepLrScheduler(epoch, lr):
+            if epoch == 60 or epoch == 120 or epoch == 160:
+                return lr/5
+            else:
+                return lr
 
-            # Iterate over the batches of the dataset.
-            for step, (x_batch_train, y_batch_train) in enumerate(train_dataset):
+        schedulerCallback = tf.keras.callbacks.LearningRateScheduler(MultiStepLrScheduler)
 
-                # Open a GradientTape to record the operations run
-                # during the forward pass, which enables auto-differentiation.
-                with tf.GradientTape() as tape:
-
-                    # augment training images
-                    x_batch_train = self.augment(x_batch_train, epoch)
-
-                    # Run the forward pass of the layer.
-                    # The operations that the layer applies
-                    # to its inputs are going to be recorded
-                    # on the GradientTape.
-                    logits = self.model(x_batch_train, training=True)  # Logits for this minibatch
-
-                    # Compute the loss value for this minibatch.
-                    loss_value = self.loss_fn(y_batch_train, logits)
-                    epoch_loss_avg.update_state(loss_value)
-                    epoch_accuracy.update_state(y_batch_train, logits)
-
-                # Use the gradient tape to automatically retrieve
-                # the gradients of the trainable variables with respect to the loss.
-                grads = tape.gradient(loss_value, self.model.trainable_weights)
-
-                # Run one step of gradient descent by updating
-                # the value of the variables to minimize the loss.
-                self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
-
-                # Log every 50 batches.
-                if step % 50 == 0:
-                    print(
-                        "Step {:03d}: Loss: {:.3f}, Accuracy: {:.3%}".format(
-                            step,
-                            epoch_loss_avg.result(),
-                            epoch_accuracy.result()
-                        )
-                    )
-            history["loss"].append(epoch_loss_avg.result())
-            history["accuracy"].append(epoch_accuracy.result())
-
-            print(
-                "Epoch {:03d}: Loss: {:.3f}, Accuracy: {:.3%}".format(
-                    epoch,
-                    epoch_loss_avg.result(),
-                    epoch_accuracy.result()
-                )
-            )
+        history = self.model.fit(
+            train_dataset,
+            batch_size = batch_size,
+            epochs = self.config['epochs'],
+            validation_data=(val_x, val_y),
+            callbacks=[schedulerCallback])
 
         self.history = history
 
@@ -238,3 +248,23 @@ class Trainer:
 
         self.save_model()
         self.save_summary()
+        self.test()
+
+
+    def test(self):
+        logger.info('Loading test data...')
+        dataset = Dataset(self.dataset_name)
+        test_x = dataset.get_test_data(normalize=True)
+        test_y = dataset.get_test_labels()
+        logger.info('Loading test data done')
+
+        logger.info('Evaluating model...')
+        self.results = self.model.evaluate(test_x, test_y, batch_size=self.config['batch_size'])
+        logger.info('Evaluating model done')
+
+        print(
+            "Loss: {:.3f}, Accuracy: {:.3%}".format(
+                self.results[0],
+                self.results[1]
+            )
+        )

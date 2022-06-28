@@ -9,6 +9,7 @@ numpy = "*"
 tensorflow = "*"
 matplotlib = "*"
 tensorflow-addons = "*"
+tensorflow-datasets = "*"
 
 [dev-packages]
 

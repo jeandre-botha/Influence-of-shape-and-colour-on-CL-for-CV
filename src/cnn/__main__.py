@@ -19,9 +19,21 @@ CONFIG_SCHEMA = {
         'batch_size': {'type': 'number'},
         'epochs': {'type': 'number'},
         'learning_rate': {'type': 'number'},
+        'momentum': {'type': 'number'},
+        'nesterov': {'type': 'boolean'},
+        'weight_decay': {'type': 'number'},
         'curriculum': {'type': 'object'},
+        'lr_decay': {
+            'type': 'object',
+            'properties': {
+                'decay_rate': {'type': 'number'},
+                'decay_epochs': {'type': 'number'}
+            },
+            'required': ['decay_rate', 'decay_epochs']
+        }
+
     },
-    'required': ['batch_size', 'epochs', 'learning_rate']
+    'required': ['batch_size', 'epochs', 'learning_rate', 'momentum', 'weight_decay']
 }
 
 if __name__ == '__main__':
