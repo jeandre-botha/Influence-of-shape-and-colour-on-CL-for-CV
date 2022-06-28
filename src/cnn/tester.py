@@ -5,6 +5,7 @@ from datetime import datetime
 
 from logger import logger
 from dataset import Dataset
+from Dataloader import Dataloader
 
 class Tester:
     def __init__(self, model_name, dataset, config):
@@ -59,7 +60,7 @@ class Tester:
         logger.info('Loading test data done')
 
         logger.info('Evaluating model...')
-        self.results = self.model.evaluate(test_loader, batch_size=self.config['batch_size'])
+        self.results = self.model.evaluate(test_loader)
         logger.info('Evaluating model done')
 
         print(

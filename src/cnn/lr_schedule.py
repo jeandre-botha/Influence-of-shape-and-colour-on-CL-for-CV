@@ -1,10 +1,9 @@
 import tensorflow as tf
 
 __reduce_on_plateau_cb = tf.keras.callbacks.ReduceLROnPlateau(
-    monitor='val_loss',
-    factor=0.1,
-    patience=5,
-    min_lr=0.001
+    monitor='val_categorical_accuracy',
+    mode="max",
+    min_delta=0.0001
 )
 
 def __multi_step_lr_scheduler(epoch, lr):

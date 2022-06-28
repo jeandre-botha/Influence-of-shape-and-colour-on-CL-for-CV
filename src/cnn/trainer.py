@@ -79,12 +79,12 @@ class Trainer:
         #         staircase=False
         #     )
 
-        optimizer = tfa.optimizers.SGDW(
-            weight_decay = weight_decay,
-            learning_rate = lr_schedule,
-            nesterov = self.config['nesterov'],
-            momentum = self.config['momentum'],
-        )
+        # optimizer = tfa.optimizers.SGDW(
+        #     weight_decay = weight_decay,
+        #     learning_rate = lr_schedule,
+        #     nesterov = self.config['nesterov'],
+        #     momentum = self.config['momentum'],
+        # )
 
         optimizer = tf.keras.optimizers.SGD(
             learning_rate = lr_schedule,
@@ -94,8 +94,8 @@ class Trainer:
 
         self.model.compile(
             optimizer=optimizer,
-            loss=tf.keras.losses.categorical_crossentropy,
-            metrics=['accuracy']
+            loss=tf.keras.losses.CategoricalCrossentropy(),
+            metrics=['CategoricalAccuracy']
         )
 
         logger.info('Initializing new model done')
@@ -116,29 +116,33 @@ class Trainer:
         pyplot.subplot(211)
         pyplot.title('Cross Entropy Loss')
         pyplot.plot(self.history.history['loss'], color='blue', label='train')
+        pyplot.plot(self.history.history['val_loss'], color='red', label='validation')
         pyplot.subplot(212)
         pyplot.title('Classification Accuracy')
-        pyplot.plot(self.history.history['accuracy'], color='blue', label='train')
+        pyplot.plot(self.history.history['categorical_accuracy'], color='blue', label='train')
+        pyplot.plot(self.history.history['val_categorical_accuracy'], color='red', label='validation')
         pyplot.savefig(result_path)
         logger.info('Training results have been saved to "{}"'.format(result_path))
         pyplot.close()
 
-    def save_model(self, model_path = None):
+    def resolve_checkpoint_cb(self, model_path = None):
         if model_path == None:
             model_path = os.path.join(self.models_dir, self.model_name)
 
-        logger.info('Saving model...')
-
-        self.model.save(model_path)
-        logger.info('Model saved to destination: "{}"'.format(model_path))
+        return tf.keras.callbacks.ModelCheckpoint(
+            model_path,
+            monitor="val_categorical_accuracy",
+            verbose=1,
+            save_best_only=True,
+            save_weights_only=False,
+            mode="max",
+            save_freq="epoch",
+        )
 
     def train(self):
         logger.info('Training model...')
 
-
         # Prepare the training dataset.
-        batch_size = self.config['batch_size']
-
         validation_size = math.floor(len(self.train_x)*0.1)
 
         train_x = self.train_x[:-validation_size]
@@ -149,39 +153,18 @@ class Trainer:
         train_loader = Dataloader(train_x, train_y, self.config, "train")
         validation_loader = Dataloader(val_x, val_y, self.config, "test")
 
+        callbacks = [
+            resolve_schedular_callback('reduce_on_plateau'),
+            self.resolve_checkpoint_cb()
+        ]
+
         history = self.model.fit(
             train_loader,
-            batch_size = batch_size,
-            epochs = self.config['epochs'],
             validation_data=validation_loader,
-            callbacks=[resolve_schedular_callback('reduce_on_plateau')])
+            epochs = self.config['epochs'],
+            callbacks=callbacks)
 
         self.history = history
 
         logger.info('Training model done')
-
-        self.save_model()
         self.save_summary()
-        self.test()
-
-
-    def test(self):
-        logger.info('Loading test data...')
-        dataset = Dataset(self.dataset_name)
-        test_x = dataset.get_test_data()
-        test_y = dataset.get_test_labels()
-
-        test_loader = Dataloader(test_x, test_y, self.config, "test")
-
-        logger.info('Loading test data done')
-
-        logger.info('Evaluating model...')
-        self.results = self.model.evaluate(test_loader, batch_size=self.config['batch_size'])
-        logger.info('Evaluating model done')
-
-        print(
-            "Loss: {:.3f}, Accuracy: {:.3%}".format(
-                self.results[0],
-                self.results[1]
-            )
-        )
