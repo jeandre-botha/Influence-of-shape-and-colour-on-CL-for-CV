@@ -7,13 +7,21 @@
 | epochs         | Number of epochs over which to train the model |   TBD   |
 | learning_rate  | Learning rate for the optimizer                |   TBD   |
 | batch_size     | Batch size for training data                   |   TBD   |
+| momentum       | Momentum term                                  |   TBD   |
+| nesterov       | Use nesterov momentum                          |   TBD   |
+| weight_decay   | Weight decay rate                              |   TBD   |
+| root_path      | path to project root                           |   TBD   |
 
 For Example:
 ``` json
 {
-    "batch_size": 64,
-    "epochs": 2,
-    "learning_rate": 0.001
+    "batch_size": 128,
+    "epochs": 100,
+    "learning_rate": 0.1,
+    "momentum": 0.0,
+    "nesterov": true,
+    "weight_decay": 1e-5,
+    "root_path" : "./"
 }
 ```
 # Supported datasets
@@ -23,14 +31,14 @@ For Example:
 | CIFAR 100   | cifar100   |
 
 
-# Training a model
+# Training and testing a model
 From the project root, run command:
 
 ``` bash
-python .\src\cnn -m <model_name> -d <dataset_name> -a train -c <path_to_config>
+python .\src\cnn -m <model_name> -d <dataset_name> -a both -c <path_to_config>
 ```
 
 For example:
 ``` bash
-python .\src\cnn -m baseline -d cifar100 -a train -c .\config_default.json 
+python .\src\cnn -m baseline -d cifar100 -a both -c .\config_default.json 
 ```
