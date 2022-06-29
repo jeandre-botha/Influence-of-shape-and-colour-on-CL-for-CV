@@ -16,13 +16,14 @@ class Dataloader(Sequence):
         self.epochs = 0
         self.on_epoch_end()
     
-    def augment(self, img):
+    def __augment(self, input):
+        img = input
         if self.mode == "train":
             img_preprocessor = Compose([
                 PadIfNeeded(40, 40, border_mode=cv2.BORDER_CONSTANT, value=0, mask_value=0),
                 RandomCrop(32, 32),
                 HorizontalFlip(p=0.5),
-                Normalize (mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010), max_pixel_value=255.0)
+                # Normalize (mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010), max_pixel_value=255.0)
             ])
 
             if 'curriculum' in self.config and self.config['curriculum']['name'] == 'colour':
@@ -35,19 +36,23 @@ class Dataloader(Sequence):
                 total_colours = 256
                 available_colours = math.ceil(c_t*total_colours)            
 
-                tmp = tf.keras.preprocessing.image.array_to_img(img)
-                tmp = tmp.convert('P', palette=Image.ADAPTIVE, colors=available_colours)
-                tmp = tmp.convert('RGB', palette=Image.ADAPTIVE, colors=available_colours)
-                tmp = tf.keras.preprocessing.image.img_to_array(tmp)
+                img = tf.keras.preprocessing.image.array_to_img(img)
+                img = img.convert('P', palette=Image.ADAPTIVE, colors=available_colours)
+                img = img.convert('RGB', palette=Image.ADAPTIVE, colors=available_colours)
+                img = tf.keras.preprocessing.image.img_to_array(img)
 
-                return img_preprocessor(image=tmp)["image"]
 
-            return img_preprocessor(image=img)["image"]
-        else:
-            img_preprocessor = Compose([
-                Normalize (mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010), max_pixel_value=255.0)
-            ])
-            return img_preprocessor(image=img)["image"]
+            img = img_preprocessor(image=img)["image"]
+
+        # else:
+            # img_preprocessor = Compose([
+            #     Normalize (mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010), max_pixel_value=255.0)
+            # ])
+
+            # img = img_preprocessor(image=img)["image"]
+
+        return tf.keras.applications.resnet_v2.preprocess_input(img)
+
 
     def __len__(self):
         return math.ceil(len(self.x) / self.batch_size)
@@ -59,7 +64,7 @@ class Dataloader(Sequence):
         batch_y = [self.y[i] for i in indices]
 
         return np.stack([
-            self.augment(x) for x in batch_x
+            self.__augment(x) for x in batch_x
         ], axis=0), np.array(batch_y)
 
     def on_epoch_end(self):

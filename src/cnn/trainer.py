@@ -79,14 +79,8 @@ class Trainer:
         #         staircase=False
         #     )
 
-        # optimizer = tfa.optimizers.SGDW(
-        #     weight_decay = weight_decay,
-        #     learning_rate = lr_schedule,
-        #     nesterov = self.config['nesterov'],
-        #     momentum = self.config['momentum'],
-        # )
-
-        optimizer = tf.keras.optimizers.SGD(
+        optimizer = tfa.optimizers.SGDW(
+            weight_decay = weight_decay,
             learning_rate = lr_schedule,
             nesterov = self.config['nesterov'],
             momentum = self.config['momentum'],
@@ -145,16 +139,22 @@ class Trainer:
         # Prepare the training dataset.
         validation_size = math.floor(len(self.train_x)*0.1)
 
-        train_x = self.train_x[:-validation_size]
-        train_y = self.train_y[:-validation_size]
-        val_x  = self.train_x[-validation_size:]
-        val_y  = self.train_y[-validation_size:]
+        # train_x = self.train_x[:-validation_size]
+        # train_y = self.train_y[:-validation_size]
+        # val_x  = self.train_x[-validation_size:]
+        # val_y  = self.train_y[-validation_size:]
+
+
+        train_x =  self.train_x
+        train_y = self.train_y
+        val_x = self.dataset.get_test_data()
+        val_y = self.dataset.get_test_labels()
 
         train_loader = Dataloader(train_x, train_y, self.config, "train")
         validation_loader = Dataloader(val_x, val_y, self.config, "test")
 
         callbacks = [
-            resolve_schedular_callback('reduce_on_plateau'),
+            resolve_schedular_callback('multi_step'),
             self.resolve_checkpoint_cb()
         ]
 

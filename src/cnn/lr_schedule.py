@@ -12,11 +12,19 @@ def __multi_step_lr_scheduler(epoch, lr):
     else:
         return lr
 
+def __multi_step_lr_scheduler_v2(epoch, lr):
+    if epoch == 150 or epoch == 255:
+        return lr/5
+    else:
+        return lr
+
+
 __multi_step_lr_scheduler_cb = tf.keras.callbacks.LearningRateScheduler(__multi_step_lr_scheduler)
 
 __cb_map = {
     'reduce_on_plateau': __reduce_on_plateau_cb,
-    'multi_step': __multi_step_lr_scheduler_cb
+    'multi_step': __multi_step_lr_scheduler_cb,
+    'multi_step_v2': __multi_step_lr_scheduler_v2
 }
 
 def resolve_schedular_callback(scheduler:str):
