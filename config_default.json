@@ -1,9 +1,9 @@
 {
-    "batch_size": 128,
-    "epochs": 100,
-    "learning_rate": 0.1,
-    "momentum": 0.9,
-    "nesterov": true,
-    "weight_decay": 1e-5,
+    "batch_size": 400,
+    "epochs": 50,
+    "weight_decay": 1e-4,
+    "max_lr": 0.01,
+    "grad_clip": 0.1,
+    "optimizer": "adam",
     "root_path" : "./"
-}
+} 

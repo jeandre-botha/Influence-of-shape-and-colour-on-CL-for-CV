@@ -1,20 +1,30 @@
 import os
-import math
-import tensorflow as tf
-import tensorflow_addons as tfa
-from matplotlib import pyplot
-from datetime import datetime
+import torch
+import torchvision
+import tarfile
+import torch.nn as nn
+import numpy as np
+from torchvision.datasets import CIFAR100
+from torch.utils.data import DataLoader
+import torchvision.transforms as tt
+import matplotlib
+import matplotlib.pyplot as plt
 from os.path import exists as file_exists
 
+from model import ResNet9
 from logger import logger
-from dataset import Dataset
-from Dataloader import Dataloader
-from lr_schedule import resolve_schedular_callback
+from utils import get_default_device, to_device
+from data_loader import DeviceDataLoader
 
-tf.get_logger().setLevel('ERROR')
-tf.autograph.set_verbosity(1)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+matplotlib.rcParams['figure.facecolor'] = '#ffffff'
+
+
 class Trainer:
+    optimizers = {
+        'adam': torch.optim.Adam,
+        'sgd': torch.optim.SGD
+    }
+
     def __init__(self, model_name, dataset, config):
         self.model_name = model_name
         self.dataset_name = dataset
@@ -23,148 +33,144 @@ class Trainer:
         self.history = None
         self.models_dir = os.path.abspath(os.path.join(self.config['root_path'], 'models'))
         self.results_dir = os.path.abspath(os.path.join(self.config['root_path'], 'results'))
+        self.data_dir = os.path.abspath(os.path.join(self.config['root_path'], 'data'))
 
-        self.train_x = None
-        self.train_y = None
+        if self.config['optimizer'] not in self.optimizers:
+            raise ValueError('invalid optimizer')
+
         self.__init_data()
         self.__init_model()
 
+
     def __init_data(self):
         logger.info('Loading training data...')
-        self.dataset = Dataset(self.dataset_name)
-        self.train_x = self.dataset.get_train_data()
-        self.train_y = self.dataset.get_train_labels()
+        stats = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))      #cifar100
+
+        train_tfms = tt.Compose([tt.RandomCrop(32, padding=4, padding_mode='reflect'), 
+                                tt.RandomHorizontalFlip(), 
+                                # tt.RandomRotate
+                                # tt.RandomResizedCrop(256, scale=(0.5,0.9), ratio=(1, 1)), 
+                                # tt.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+                                tt.ToTensor(), 
+                                tt.Normalize(*stats,inplace=True)])
+        valid_tfms = tt.Compose([tt.ToTensor(), tt.Normalize(*stats)])
+
+        train_ds = CIFAR100(root = self.data_dir, download = True, transform = train_tfms)
+        valid_ds = CIFAR100(root = self.data_dir, train = False, transform = valid_tfms)
+
+        train_dl = DataLoader(train_ds, self.config['batch_size'], shuffle=True, num_workers=3, pin_memory=True)
+        valid_dl = DataLoader(valid_ds, self.config['batch_size']*2, num_workers=3, pin_memory=True)
+
+        device = get_default_device()
+        self.train_dl = DeviceDataLoader(train_dl, device)
+        self.valid_dl = DeviceDataLoader(valid_dl, device)
         logger.info('Loading training data done')
 
     
     def __init_model(self):
+        model =  None
         model_path = os.path.join(self.models_dir, self.model_name)
         if file_exists(model_path):
             try:
                 logger.info('Loading existing model...')
-                self.model = tf.keras.models.load_model(model_path)
+                model = ResNet9(3, 100)
+                model.load_state_dict(torch.load(model_path))
                 logger.info('Loading existing model done')
-                return
             except:
                 logger.warning('could not load model at "{}"'.format(model_path))
 
-        logger.info('Initializing new model...')
+        if model == None:
+            logger.info('Initializing new model...')
+            model = ResNet9(3, 100)
 
-        self.model = tf.keras.applications.resnet_v2.ResNet50V2(
-            include_top=True,
-            weights = None,
-            input_tensor=None,
-            input_shape=(32, 32, 3),
-            pooling=None,
-            classes=100,
-            classifier_activation='softmax'
-        )
+        device = get_default_device()
+        torch.cuda.empty_cache()
+        self.model = to_device(model, device)  
 
-        learning_rate = self.config['learning_rate']
-        weight_decay = self.config['weight_decay']
-        lr_decay = self.config['lr_decay'] if 'lr_decay' in self.config else None       
+    def save_model(self, model, path):
+        logger.info('Saving model')
+        torch.save(model.state_dict(), path)
+        logger.info('Model saved to {}'.format(path))
 
-        lr_schedule = learning_rate
-        # if lr_decay != None:
-        #     logger.debug("Adding exponential decay lr schedule")
-        #     decay_rate = lr_decay['decay_rate']
-        #     decay_epochs = lr_decay['decay_epochs']
-        #     steps_per_epoch = math.ceil((len(self.train_x) / self.config['batch_size']))
-        #     decay_steps = decay_epochs * steps_per_epoch
+    def test(self):
+        @torch.no_grad()
+        def evaluate(model, val_loader):
+            model.eval()      
+            outputs = [model.validation_step(batch) for batch in val_loader]
+            return model.validation_epoch_end(outputs)
 
-        #     lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-        #         learning_rate,
-        #         decay_steps=decay_steps,
-        #         decay_rate=decay_rate,
-        #         staircase=False
-        #     )
-
-        optimizer = tfa.optimizers.SGDW(
-            weight_decay = weight_decay,
-            learning_rate = lr_schedule,
-            nesterov = self.config['nesterov'],
-            momentum = self.config['momentum'],
-        )
-
-        self.model.compile(
-            optimizer=optimizer,
-            loss=tf.keras.losses.CategoricalCrossentropy(),
-            metrics=['CategoricalAccuracy']
-        )
-
-        logger.info('Initializing new model done')
-
-    def save_summary(self, result_path = None):
-        if self.history == None:
-            logger.error('no available training history found, please run train first')
-            return
-
-        if result_path == None:
-            file_name = 'train_{}_result.png'.format(str(datetime.now().timestamp()))
-            model_results_path =  os.path.join(self.results_dir, self.model_name)
-            os.makedirs(model_results_path, exist_ok=True)
-            result_path = os.path.join(model_results_path, file_name)
-        elif not file_exists(os.path.dirname(result_path)):
-            raise ValueError("specified path does not exist")
-
-        pyplot.subplot(211)
-        pyplot.title('Cross Entropy Loss')
-        pyplot.plot(self.history.history['loss'], color='blue', label='train')
-        pyplot.plot(self.history.history['val_loss'], color='red', label='validation')
-        pyplot.subplot(212)
-        pyplot.title('Classification Accuracy')
-        pyplot.plot(self.history.history['categorical_accuracy'], color='blue', label='train')
-        pyplot.plot(self.history.history['val_categorical_accuracy'], color='red', label='validation')
-        pyplot.savefig(result_path)
-        logger.info('Training results have been saved to "{}"'.format(result_path))
-        pyplot.close()
-
-    def resolve_checkpoint_cb(self, model_path = None):
-        if model_path == None:
-            model_path = os.path.join(self.models_dir, self.model_name)
-
-        return tf.keras.callbacks.ModelCheckpoint(
-            model_path,
-            monitor="val_categorical_accuracy",
-            verbose=1,
-            save_best_only=True,
-            save_weights_only=False,
-            mode="max",
-            save_freq="epoch",
-        )
+        evaluate(self.model, self.valid_dl)
 
     def train(self):
+        def get_lr(optimizer):
+            for param_group in optimizer.param_groups:
+                return param_group['lr']
+
+        def evaluate(model, val_loader):
+            model.eval()      
+            outputs = [model.validation_step(batch) for batch in val_loader]
+            return model.validation_epoch_end(outputs)
+                
+        def fit_one_cycle(epochs, max_lr, model, train_loader, val_loader, 
+                        weight_decay=0, grad_clip=None, opt_func=torch.optim.SGD):
+
+            torch.cuda.empty_cache()
+            history = []
+            
+            # Set up cutom optimizer with weight decay
+            optimizer = opt_func(model.parameters(), max_lr, weight_decay=weight_decay)
+
+            # Set up one-cycle learning rate scheduler
+            sched = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr,
+                epochs=epochs, 
+                steps_per_epoch=len(train_loader)
+            )
+            
+            for epoch in range(epochs):
+                # Training Phase 
+                model.train()
+                train_losses = []
+                lrs = []
+                for batch in train_loader:
+                    loss = model.training_step(batch)
+                    train_losses.append(loss)
+                    loss.backward()
+                    
+                    # Gradient clipping
+                    if grad_clip: 
+                        nn.utils.clip_grad_value_(model.parameters(), grad_clip)
+                    
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    
+                    # Record & update learning rate
+                    lrs.append(get_lr(optimizer))
+                    sched.step()
+                
+                # Validation phase
+                result = evaluate(model, val_loader)
+                result['train_loss'] = torch.stack(train_losses).mean().item()
+                result['lrs'] = lrs
+                model.epoch_end(epoch, result)
+                history.append(result)
+            return history
+
         logger.info('Training model...')
-
-        # Prepare the training dataset.
-        validation_size = math.floor(len(self.train_x)*0.1)
-
-        # train_x = self.train_x[:-validation_size]
-        # train_y = self.train_y[:-validation_size]
-        # val_x  = self.train_x[-validation_size:]
-        # val_y  = self.train_y[-validation_size:]
-
-
-        train_x =  self.train_x
-        train_y = self.train_y
-        val_x = self.dataset.get_test_data()
-        val_y = self.dataset.get_test_labels()
-
-        train_loader = Dataloader(train_x, train_y, self.config, "train")
-        validation_loader = Dataloader(val_x, val_y, self.config, "test")
-
-        callbacks = [
-            resolve_schedular_callback('multi_step'),
-            self.resolve_checkpoint_cb()
-        ]
-
-        history = self.model.fit(
-            train_loader,
-            validation_data=validation_loader,
-            epochs = self.config['epochs'],
-            callbacks=callbacks)
-
-        self.history = history
+        torch.cuda.empty_cache()
+        history = [evaluate(self.model, self.valid_dl)]
+        history += fit_one_cycle(
+            self.config['epochs'],
+            self.config['max_lr'],
+            self.model,
+            self.train_dl,
+            self.valid_dl, 
+            grad_clip=self.config['grad_clip'], 
+            weight_decay=self.config['weight_decay'], 
+            opt_func= self.optimizers[self.config['optimizer']]
+        )
 
         logger.info('Training model done')
-        self.save_summary()
+
+        self.save_model(self.model, os.path.join(self.models_dir, self.model_name))

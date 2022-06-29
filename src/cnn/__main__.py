@@ -8,7 +8,6 @@ from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
 from logger import logger
 from trainer import Trainer
-from tester import Tester
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -18,34 +17,17 @@ CONFIG_SCHEMA = {
     'properties': {
         'batch_size': {'type': 'number'},
         'epochs': {'type': 'number'},
-        'learning_rate': {'type': 'number'},
-        'momentum': {'type': 'number'},
-        'nesterov': {'type': 'boolean'},
         'weight_decay': {'type': 'number'},
+        'max_lr': {'type': 'number'},
+        'grad_clip': {'type': 'number'},
+        'optimizer': {'type': 'string'},
+        'root_path': {'type': 'string'},
         'curriculum': {'type': 'object'},
-        'lr_decay': {
-            'type': 'object',
-            'properties': {
-                'decay_rate': {'type': 'number'},
-                'decay_epochs': {'type': 'number'}
-            },
-            'required': ['decay_rate', 'decay_epochs']
-        }
 
     },
-    'required': ['batch_size', 'epochs', 'learning_rate', 'momentum', 'weight_decay']
+    'required': ['batch_size', 'epochs', 'weight_decay', 'max_lr', 'grad_clip', 'optimizer', 'root_path']
 }
 
-def train(options, config):
-    trainer = Trainer(options.model, options.dataset, config)
-    trainer.train()
-
-def test(options, config):
-    if options.model == None or options.model == "":
-        logger.error('Model option required for testing.')
-        exit(0)
-    tester = Tester(options.model, options.dataset, config)
-    tester.test()
 
 if __name__ == '__main__':
     try:
@@ -64,8 +46,8 @@ if __name__ == '__main__':
             '--model',
             type=str,
             nargs='?',
-            required=False,
-            help='the path of the the model that should be used',
+            required=True,
+            help='the name of the the model',
         )
         parser.add_argument(
             '-d',
@@ -105,13 +87,15 @@ if __name__ == '__main__':
             logger.error('Invalid config file structure, err: ', err)
             exit(0)
 
+        trainer = Trainer(options.model, options.dataset, config)
+
         if options.action == 'train':
-            train(options, config)
+            trainer.train()
         elif options.action == 'test':
-            test(options, config)
+            trainer.test()
         elif options.action == 'both':
-            train(options, config)
-            test(options, config)
+            trainer.train()
+            trainer.test()
 
     except Exception as ex:
         logger.exception(ex)
