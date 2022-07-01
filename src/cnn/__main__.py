@@ -18,14 +18,28 @@ CONFIG_SCHEMA = {
         'batch_size': {'type': 'number'},
         'epochs': {'type': 'number'},
         'weight_decay': {'type': 'number'},
-        'max_lr': {'type': 'number'},
         'grad_clip': {'type': 'number'},
-        'optimizer': {'type': 'string'},
+        'optimizer': {
+            'type': 'object',
+            'properties': {
+                'name': {'type': 'string'},
+                'learning_rate':  {'type': 'number'},
+                'momentum': {'type': 'number'},
+                'nesterov': {'type': 'boolean'},
+            },
+            'required': ['name', 'learning_rate']
+        },
         'root_path': {'type': 'string'},
-        'curriculum': {'type': 'object'},
+        'curriculum': {
+            'type': 'object',
+            'properties': {
+                'name': {'type': 'string'}
+            },
+            'required': ['name']
+        },
 
     },
-    'required': ['batch_size', 'epochs', 'weight_decay', 'max_lr', 'grad_clip', 'optimizer', 'root_path']
+    'required': ['batch_size', 'epochs', 'weight_decay', 'optimizer', 'root_path']
 }
 
 

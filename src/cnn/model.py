@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+import torchvision
 
 def accuracy(outputs, labels):
     _, preds = torch.max(outputs, dim=1)
@@ -9,61 +10,44 @@ def accuracy(outputs, labels):
 class ImageClassificationBase(nn.Module):
     def training_step(self, batch):
         images, labels = batch 
-        out = self(images)                  # Generate predictions
-        loss = F.cross_entropy(out, labels) # Calculate loss
+        out = self(images)
+        loss = F.cross_entropy(out, labels)
         return loss
     
     def validation_step(self, batch):
         images, labels = batch 
-        out = self(images)                    # Generate predictions
-        loss = F.cross_entropy(out, labels)   # Calculate loss
-        acc = accuracy(out, labels)           # Calculate accuracy
+        out = self(images)
+        loss = F.cross_entropy(out, labels)
+        acc = accuracy(out, labels)
         return {'val_loss': loss.detach(), 'val_acc': acc}
         
     def validation_epoch_end(self, outputs):
         batch_losses = [x['val_loss'] for x in outputs]
-        epoch_loss = torch.stack(batch_losses).mean()   # Combine losses
+        epoch_loss = torch.stack(batch_losses).mean()
         batch_accs = [x['val_acc'] for x in outputs]
-        epoch_acc = torch.stack(batch_accs).mean()      # Combine accuracies
+        epoch_acc = torch.stack(batch_accs).mean()
         return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
     
     def epoch_end(self, epoch, result):
-        print("Epoch [{}], last_lr: {:.5f}, train_loss: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}".format(
-            epoch, result['lrs'][-1], result['train_loss'], result['val_loss'], result['val_acc']))
+        print("Epoch [{}], train_loss: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}".format(
+            epoch, result['train_loss'], result['val_loss'], result['val_acc']))
 
-def conv_block(in_channels, out_channels, pool=False):
-    layers = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1), 
-            nn.BatchNorm2d(out_channels), 
-            nn.ReLU(inplace=True)]
-    if pool: layers.append(nn.MaxPool2d(2))
-    return nn.Sequential(*layers)
-
-class ResNet9(ImageClassificationBase):
-    def __init__(self, in_channels, num_classes):
+class ResNet50(ImageClassificationBase):
+    def __init__(self, num_classes):
         super().__init__()
-        # 3 x 32 x 32
-        self.conv1 = conv_block(in_channels, 64)         # 64 x 32 x 32
-        self.conv2 = conv_block(64, 128, pool=True)      # 128 x 16 x 16
-        self.res1 = nn.Sequential(conv_block(128, 128), 
-                                conv_block(128, 128))  # 128 x 16 x 16
-        
-        self.conv3 = conv_block(128, 256, pool=True)    # 256 x 8 x 8
-        self.conv4 = conv_block(256, 512, pool=True)    # 512 x 4 x 4
-        self.res2 = nn.Sequential(conv_block(512, 512), 
-                                conv_block(512, 512))  # 512 x 4 x 4
-        
-        self.classifier = nn.Sequential(nn.MaxPool2d(4), # 512 x 1 x 1
-                                        nn.Flatten(),     # 512
-                                        nn.Dropout(0.2),  
-                                        nn.Linear(512, num_classes)) # 100
+        self.network = torchvision.models.resnet50()
+        num_ftrs = self.network.fc.in_features
+        self.network.fc = nn.Linear(num_ftrs, num_classes)
         
     def forward(self, xb):
-        out1 = self.conv1(xb)
-        out2 = self.conv2(out1)
-        out3 = self.res1(out2) + out2
-        out4 = self.conv3(out3)
-        out5 = self.conv4(out4)
-        out6 = self.res2(out5) + out5
-        out = self.classifier(out6)
-        return out
+            return self.network(xb)
+
+class ResNet34(ImageClassificationBase):
+    def __init__(self, num_classes):
+        super().__init__()
+        self.network = torchvision.models.resnet34()
+        num_ftrs = self.network.fc.in_features
+        self.network.fc = nn.Linear(num_ftrs, num_classes)
         
+    def forward(self, xb):
+            return self.network(xb)

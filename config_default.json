@@ -1,9 +1,12 @@
 {
-    "batch_size": 400,
-    "epochs": 50,
-    "weight_decay": 1e-4,
-    "max_lr": 0.01,
-    "grad_clip": 0.1,
-    "optimizer": "adam",
+    "batch_size": 128,
+    "epochs": 200,
+    "weight_decay": 5e-4,
+    "optimizer": {
+        "name": "sgd",
+        "learning_rate": 0.1,
+        "momentum": 0.9,
+        "nesterov": true
+    },
     "root_path" : "./"
 } 

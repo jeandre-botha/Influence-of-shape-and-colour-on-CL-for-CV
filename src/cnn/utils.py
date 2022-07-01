@@ -1,6 +1,5 @@
 import torch
 from logger import logger
-from model import ResNet9
 
 def get_default_device():
     """Pick GPU if available, else CPU"""
