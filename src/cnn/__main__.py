@@ -19,6 +19,7 @@ CONFIG_SCHEMA = {
         'epochs': {'type': 'number'},
         'weight_decay': {'type': 'number'},
         'grad_clip': {'type': 'number'},
+        'save_epoch': {'type': 'number'},
         'optimizer': {
             'type': 'object',
             'properties': {

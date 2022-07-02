@@ -8,5 +8,6 @@
         "momentum": 0.9,
         "nesterov": true
     },
+    "save_epoch": 60,
     "root_path" : "./"
 } 

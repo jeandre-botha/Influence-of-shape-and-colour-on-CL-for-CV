@@ -11,12 +11,14 @@ import matplotlib.pyplot as plt
 from os.path import exists as file_exists
 import torch.optim as optim
 
-from model import ResNet50
+from model import resnet50, eval_training
 from logger import logger
 from utils import get_default_device, to_device
 from data_loader import DeviceDataLoader
 from transform import Curriculum
 import json
+
+import torch.nn.functional as F
 
 matplotlib.rcParams['figure.facecolor'] = '#ffffff'
 
@@ -77,7 +79,7 @@ class Trainer:
         if file_exists(model_path):
             try:
                 logger.info('Loading existing model...')
-                model = ResNet50(100)
+                model = resnet50()
                 model.load_state_dict(torch.load(model_path))
                 logger.info('Loading existing model done')
             except:
@@ -85,7 +87,7 @@ class Trainer:
 
         if model == None:
             logger.info('Initializing new model...')
-            model = ResNet50(100)
+            model = resnet50()
 
         device = get_default_device()
         torch.cuda.empty_cache()
@@ -97,21 +99,26 @@ class Trainer:
         logger.info('Model saved to {}'.format(path))
 
     def test(self):
-        @torch.no_grad()
-        def evaluate(model, val_loader):
-            model.eval()      
-            outputs = [model.validation_step(batch) for batch in val_loader]
-            return model.validation_epoch_end(outputs)
+        torch.cuda.empty_cache()
+        result = eval_training(self.model, self.valid_dl)
+        print("val_loss: {}, val_acc: {}".format(result['val_loss'], result['val_acc']))
 
-        evaluate(self.model, self.valid_dl)
+        if result_path == None:
+            file_name = 'test_{}_result.txt'.format(str(datetime.now().timestamp()))
+            model_results_path =  os.path.join(self.results_dir, self.model_name)
+            os.makedirs(model_results_path, exist_ok=True)
+            result_path = os.path.join(model_results_path, file_name)
+        elif not file_exists(os.path.dirname(result_path)):
+            raise ValueError("specified path does not exist")
 
-    def train(self):
-        def evaluate(model, val_loader):
-            model.eval()      
-            outputs = [model.validation_step(batch) for batch in val_loader]
-            return model.validation_epoch_end(outputs)
-                
+        with open(result_path, 'w') as result_file:
+            result_file.write('test loss: {},  test acc: {}'.format(result['val_loss'], result['val_acc']))
+
+        logger.info('Test results have been saved to "{}"'.format(result_path))
+
+    def train(self):                
         def fit(epochs, model, train_loader, val_loader, opt_func, train_scheduler=None, grad_clip=None):
+            best_acc = -1
             history = []
             if self.curriculum_tfm != None:
                     self.curriculum_tfm.reset_epoch()
@@ -122,24 +129,33 @@ class Trainer:
                 # Training Phase 
                 model.train()
                 train_losses = []
+                train_acc = []
                 for batch in train_loader:
-                    loss = model.training_step(batch)
+                    opt_func.zero_grad()
+                    loss, acc = model.training_step(batch)
                     train_losses.append(loss)
+                    train_acc.append(acc)
                     loss.backward()
 
                     if grad_clip != None:
                         nn.utils.clip_grad_value_(model.parameters(), 0.1)
 
                     opt_func.step()
-                    opt_func.zero_grad()
                 # Validation phase
-                result = evaluate(model, val_loader)
+                result = eval_training(model, val_loader)
                 result['train_loss'] = torch.stack(train_losses).mean().item()
+                result['train_acc'] = torch.stack(train_acc).mean().item()
                 model.epoch_end(epoch, result)
                 history.append(result)
 
                 if self.curriculum_tfm != None:
                     self.curriculum_tfm.advance_epoch()
+
+
+                if epoch > self.config['save_epoch'] and best_acc < result['val_acc']:
+                    self.save_model()
+                    best_acc = result['val_acc']
+   
             return history
 
         logger.info('Training model...') 
@@ -174,7 +190,7 @@ class Trainer:
             "epochs": self.config['epochs'],
             "batch_size": self.config['batch_size'],
             "weight_decay": weight_decay,
-            "optimizer": optimizer.__name__,
+            "optimizer": self.config['optimizer']['name'],
             "learning_rate": learning_rate,
             "momentum": momentum,
             "use_nesterov": use_nesterov,
@@ -185,7 +201,7 @@ class Trainer:
         logger.info('Using parameters: {}'.format(json.dumps(params)))
 
         torch.cuda.empty_cache()
-        history = [evaluate(self.model, self.valid_dl)]
+        history = [eval_training(self.model, self.valid_dl)]
         history += fit(self.config['epochs'], self.model, self.train_dl, self.valid_dl, optimizer, train_scheduler, grad_clip)
 
         logger.info('Training model done')
