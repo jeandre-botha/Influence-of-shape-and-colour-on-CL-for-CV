@@ -8,11 +8,12 @@
         "momentum": 0.9,
         "nesterov": true
     },
+    "save_epoch": 60,
     "root_path" : "./",
     "curriculum": {
         "name" : "colour",
         "parameters" : {
-            "t_g": 150,
+            "t_g": 120,
             "c_0": 0.01
         }
     }

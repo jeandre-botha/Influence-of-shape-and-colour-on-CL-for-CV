@@ -20,6 +20,11 @@ import json
 
 import torch.nn.functional as F
 
+torch.backends.cudnn.benchmark = True
+torch.autograd.set_detect_anomaly(False)
+torch.autograd.profiler.profile(False)
+torch.autograd.profiler.emit_nvtx(False)
+
 matplotlib.rcParams['figure.facecolor'] = '#ffffff'
 
 
@@ -44,11 +49,11 @@ class Trainer:
         (0.2673342858792401, 0.2564384629170883, 0.27615047132568404))      #cifar100
 
         train_tfms = [
-            tt.RandomCrop(32, padding=4, padding_mode='reflect'), 
-            tt.RandomHorizontalFlip(), 
+            tt.RandomCrop(32, padding=4, padding_mode='reflect'),
+            tt.RandomHorizontalFlip(),
             # tt.RandomRotate
             # tt.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-            tt.ToTensor(), 
+            tt.ToTensor(),
             tt.Normalize(*stats,inplace=True)
         ]
 
@@ -72,7 +77,7 @@ class Trainer:
         self.valid_dl = DeviceDataLoader(valid_dl, device)
         logger.info('Loading training data done')
 
-    
+
     def __init_model(self):
         model =  None
         model_path = os.path.join(self.models_dir, self.model_name)
@@ -91,7 +96,7 @@ class Trainer:
 
         device = get_default_device()
         torch.cuda.empty_cache()
-        self.model = to_device(model, device)  
+        self.model = to_device(model, device)
 
     def save_model(self, model, path):
         logger.info('Saving model')
@@ -116,22 +121,26 @@ class Trainer:
 
         logger.info('Test results have been saved to "{}"'.format(result_path))
 
-    def train(self):                
+    def train(self):
         def fit(epochs, model, train_loader, val_loader, opt_func, train_scheduler=None, grad_clip=None):
             best_acc = -1
             history = []
             if self.curriculum_tfm != None:
                     self.curriculum_tfm.reset_epoch()
-                    
+
             for epoch in range(epochs):
                 if train_scheduler != None:
                     train_scheduler.step()
-                # Training Phase 
+                # Training Phase
                 model.train()
                 train_losses = []
                 train_acc = []
                 for batch in train_loader:
-                    opt_func.zero_grad()
+
+                    # opt_func.zero_grad()
+                    for param in model.parameters():
+                        param.grad = None
+                        
                     loss, acc = model.training_step(batch)
                     train_losses.append(loss)
                     train_acc.append(acc)
@@ -153,12 +162,12 @@ class Trainer:
 
 
                 if epoch > self.config['save_epoch'] and best_acc < result['val_acc']:
-                    self.save_model()
+                    self.save_model(self.model, os.path.join(self.models_dir, self.model_name))
                     best_acc = result['val_acc']
-   
+
             return history
 
-        logger.info('Training model...') 
+        logger.info('Training model...')
 
         optimizer = torch.optim.SGD
         optimizer_config = self.config['optimizer']
@@ -181,7 +190,7 @@ class Trainer:
         grad_clip = self.config['grad_clip'] if 'grad_clip' in self.config else None
 
         train_scheduler = optim.lr_scheduler.MultiStepLR(
-            optimizer, 
+            optimizer,
             milestones=[60, 120, 160],
             gamma=0.2
         )
@@ -206,19 +215,15 @@ class Trainer:
 
         logger.info('Training model done')
 
-        self.save_model(self.model, os.path.join(self.models_dir, self.model_name))
         self.save_training_plots(history)
 
-    def save_training_plots(self, history, result_path = None):
-        if result_path == None:
-            file_name = 'train_{}_result.png'.format(str(datetime.now().timestamp()))
-            model_results_path =  os.path.join(self.results_dir, self.model_name)
-            os.makedirs(model_results_path, exist_ok=True)
-            result_path = os.path.join(model_results_path, file_name)
-        elif not file_exists(os.path.dirname(result_path)):
-            raise ValueError("specified path does not exist")
+    def save_training_plots(self, history):
+        file_name = 'train_{}_result.png'.format(str(datetime.now().timestamp()))
+        model_results_path =  os.path.join(self.results_dir, self.model_name)
+        os.makedirs(model_results_path, exist_ok=True)
+        result_path = os.path.join(model_results_path, file_name)
 
-        train_accuracies = [x['train_acc'] for x in history]
+        # train_accuracies = [x['train_acc'] for x in history]
         val_accuracies = [x['val_acc'] for x in history]
         train_losses = [x.get('train_loss') for x in history]
         val_losses = [x['val_loss'] for x in history]
@@ -229,7 +234,7 @@ class Trainer:
         plt.plot(val_losses, color='red', label='validation')
         plt.subplot(212)
         plt.title('Classification Accuracy')
-        plt.plot(train_accuracies, color='blue', label='train')
+        # plt.plot(train_accuracies, color='blue', label='train')
         plt.plot(val_accuracies, color='red', label='validation')
         plt.savefig(result_path)
         logger.info('Training results have been saved to "{}"'.format(result_path))

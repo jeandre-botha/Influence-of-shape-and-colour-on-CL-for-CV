@@ -27,5 +27,5 @@ class Curriculum(object):
         self.available_colours = self.__calculate_available_colours()
 
     def reset_epoch(self):
-        self.epoch += 0
+        self.epoch = 0
         self.available_colours = self.__calculate_available_colours()
