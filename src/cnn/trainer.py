@@ -208,6 +208,8 @@ class Trainer:
         }
 
         logger.info('Using parameters: {}'.format(json.dumps(params)))
+        if 'curriculum' in self.config:
+            logger.info('Using curriculum  parameters: {}'.format(json.dumps(self.config['curriculum'])))
 
         torch.cuda.empty_cache()
         history = [eval_training(self.model, self.valid_dl)]
