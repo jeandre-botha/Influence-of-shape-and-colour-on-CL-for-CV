@@ -22,7 +22,7 @@ class Curriculum(object):
         c_t = min(1, t*((1-c_0)/t_g)+c_0)
         total_colours = 256
         self.available_colours = math.ceil(c_t*total_colours)
-        return math.ceil(c_t*total_colours) 
+        logger.info('curriculum (colour): available colours set to {}'.format(self.available_colours)) 
 
     def advance_epoch(self):
         self.epoch += 1

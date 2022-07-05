@@ -108,13 +108,10 @@ class Trainer:
         result = eval_training(self.model, self.valid_dl)
         print("val_loss: {}, val_acc: {}".format(result['val_loss'], result['val_acc']))
 
-        if result_path == None:
-            file_name = 'test_{}_result.txt'.format(str(datetime.now().timestamp()))
-            model_results_path =  os.path.join(self.results_dir, self.model_name)
-            os.makedirs(model_results_path, exist_ok=True)
-            result_path = os.path.join(model_results_path, file_name)
-        elif not file_exists(os.path.dirname(result_path)):
-            raise ValueError("specified path does not exist")
+        file_name = 'test_{}_result.txt'.format(str(datetime.now().timestamp()))
+        model_results_path =  os.path.join(self.results_dir, self.model_name)
+        os.makedirs(model_results_path, exist_ok=True)
+        result_path = os.path.join(model_results_path, file_name)
 
         with open(result_path, 'w') as result_file:
             result_file.write('test loss: {},  test acc: {}'.format(result['val_loss'], result['val_acc']))
