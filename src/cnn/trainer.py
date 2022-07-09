@@ -119,14 +119,14 @@ class Trainer:
         logger.info('Test results have been saved to "{}"'.format(result_path))
 
     def train(self):
-        def fit(epochs, model, train_loader, val_loader, opt_func, train_scheduler=None, grad_clip=None):
+        def fit(epochs, model, train_loader, val_loader, opt_func, train_scheduler=None, step_schedule_on_batch= True, grad_clip=None):
             best_acc = -1
             history = []
             if self.curriculum_tfm != None:
                     self.curriculum_tfm.reset_epoch()
 
             for epoch in range(epochs):
-                if train_scheduler != None:
+                if (train_scheduler != None) and (not step_schedule_on_batch):
                     train_scheduler.step()
                 # Training Phase
                 model.train()
@@ -147,6 +147,9 @@ class Trainer:
                         nn.utils.clip_grad_value_(model.parameters(), 0.1)
 
                     opt_func.step()
+
+                    if (train_scheduler != None) and step_schedule_on_batch:
+                        train_scheduler.step()
                 # Validation phase
                 result = eval_training(model, val_loader)
                 result['train_loss'] = torch.stack(train_losses).mean().item()
@@ -166,7 +169,12 @@ class Trainer:
 
         logger.info('Training model...')
 
-        optimizer = torch.optim.SGD
+        optimizer = None
+        train_scheduler = None
+        momentum = None
+        use_nesterov = None
+        train_scheduler_config = None
+        step_schedule_on_batch = False
         optimizer_config = self.config['optimizer']
         weight_decay =  self.config['weight_decay']
         if optimizer_config['name'] == 'sgd':
@@ -181,16 +189,44 @@ class Trainer:
                 weight_decay=weight_decay,
                 nesterov=use_nesterov
             )
+            train_scheduler = optim.lr_scheduler.MultiStepLR(
+                optimizer,
+                milestones=[60, 120, 160],
+                gamma=0.2
+            )
+            step_schedule_on_batch = False
+
+            train_scheduler_config = {
+                "type": "MultiStepLR",
+                "train_scheduler_milestones": "[60, 120, 160]",
+                "train_scheduler_gamma": "0.2",
+            }
+
+        elif optimizer_config['name'] == 'adam':
+            learning_rate = optimizer_config['learning_rate']
+            optimizer = torch.optim.Adam(
+                self.model.parameters(),
+                learning_rate,
+                weight_decay=weight_decay
+            )
+            train_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                learning_rate,
+                epochs=self.config['epochs'], 
+                steps_per_epoch=len(self.train_dl)
+            )
+            step_schedule_on_batch = True
+
+            train_scheduler_config = {
+                "type": "OneCycleLR",
+                "max_lr": learning_rate
+            }
+
         else:
             raise ValueError('Unsupported optimizer {}'.format(self.config['optimizer']['name']))
 
         grad_clip = self.config['grad_clip'] if 'grad_clip' in self.config else None
 
-        train_scheduler = optim.lr_scheduler.MultiStepLR(
-            optimizer,
-            milestones=[60, 120, 160],
-            gamma=0.2
-        )
 
         params = {
             "epochs": self.config['epochs'],
@@ -200,8 +236,8 @@ class Trainer:
             "learning_rate": learning_rate,
             "momentum": momentum,
             "use_nesterov": use_nesterov,
-            "train_scheduler_milestones": "[60, 120, 160]",
-            "train_scheduler_gamma": "0.2",
+            "train_scheduler_config": train_scheduler_config
+
         }
 
         logger.info('Using parameters: {}'.format(json.dumps(params)))
@@ -210,7 +246,7 @@ class Trainer:
 
         torch.cuda.empty_cache()
         history = [eval_training(self.model, self.valid_dl)]
-        history += fit(self.config['epochs'], self.model, self.train_dl, self.valid_dl, optimizer, train_scheduler, grad_clip)
+        history += fit(self.config['epochs'], self.model, self.train_dl, self.valid_dl, optimizer, train_scheduler, step_schedule_on_batch, grad_clip)
 
         logger.info('Training model done')
 
