@@ -1,6 +1,7 @@
 import math
 from PIL import Image
 from logger import logger
+from img_utils import alter_img_colour_palette
 
 class Curriculum(object):
     def __init__(self, name, parameters):
@@ -10,9 +11,8 @@ class Curriculum(object):
         self.__update_available_colours()
 
     def __call__(self, img):
-        if  self.name == 'colour':
-            img = img.convert('P', palette=Image.ADAPTIVE, colors=self.available_colours)
-            img = img.convert('RGB', palette=Image.ADAPTIVE, colors=self.available_colours)
+        if self.name == 'colour':
+            img = alter_img_colour_palette(img, self.available_colours)
         return img 
 
     def __update_available_colours(self):

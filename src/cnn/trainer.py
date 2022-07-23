@@ -122,8 +122,6 @@ class Trainer:
         def fit(epochs, model, train_loader, val_loader, opt_func, train_scheduler=None, step_schedule_on_batch= True, grad_clip=None):
             best_acc = -1
             history = []
-            if self.curriculum_tfm != None:
-                    self.curriculum_tfm.reset_epoch()
 
             for epoch in range(epochs):
                 if (train_scheduler != None) and (not step_schedule_on_batch):
@@ -246,6 +244,9 @@ class Trainer:
 
         torch.cuda.empty_cache()
         history = [eval_training(self.model, self.valid_dl)]
+        
+        if self.curriculum_tfm != None:
+            self.curriculum_tfm.reset_epoch()
         history += fit(self.config['epochs'], self.model, self.train_dl, self.valid_dl, optimizer, train_scheduler, step_schedule_on_batch, grad_clip)
 
         logger.info('Training model done')
