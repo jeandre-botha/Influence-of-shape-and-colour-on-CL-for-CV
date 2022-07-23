@@ -16,8 +16,10 @@ from logger import logger
 from utils import get_default_device, to_device
 from data_loader import DeviceDataLoader
 from transform import ColourCurriculumTransform
-from sampler import ComplexityCurriculumSampler
+from img_utils import calculate_mean_si, convert_img_to_grayscale, pil_to_skimage
+from  curriculm_utils import calculate_num_easiest_examples
 import json
+import math
 
 import torch.nn.functional as F
 
@@ -43,8 +45,11 @@ class Trainer:
         self.models_dir = os.path.abspath(os.path.join(self.config['root_path'], 'models'))
         self.results_dir = os.path.abspath(os.path.join(self.config['root_path'], 'results'))
         self.data_dir = os.path.abspath(os.path.join(self.config['root_path'], 'data'))
-
+        self.metadata = {}
+        self.training_dl = None
+        self.validation_dl = None
         self.__init_data()
+        self.__setup_data_loaders()
         self.__init_model()
 
 
@@ -70,34 +75,58 @@ class Trainer:
         train_tfms = tt.Compose(train_tfms)
         valid_tfms = tt.Compose([tt.ToTensor(), tt.Normalize(*stats)])
 
-        train_ds = CIFAR100(root = self.data_dir, download = True, transform = train_tfms)
-        valid_ds = CIFAR100(root = self.data_dir, train = False, transform = valid_tfms)
+        self.train_ds = CIFAR100(root = self.data_dir, download = True, transform = train_tfms)
+        self.validation_ds = CIFAR100(root = self.data_dir, train = False, transform = valid_tfms)
 
-        train_sampler = None
         if 'curriculum' in self.config and self.config['curriculum']['name'] == "complexity":
             logger.info('Initiating "{}" curriculum'.format(self.config['curriculum']['name']))
-            ds_inputs = []
             tmp_ds = CIFAR100(root = self.data_dir, download = True)
+            ind_n_difficulty = []
+
             for i in range(len(tmp_ds)):
-                ds_inputs.append(tmp_ds[i])
-            train_sampler = ComplexityCurriculumSampler(ds_inputs)
-
-        shuffle_train_data = (train_sampler == None)
-        train_dl = DataLoader(
-            train_ds,
-            self.config['batch_size'],
-            sampler=train_sampler,
-            shuffle=shuffle_train_data,
-            num_workers=4,
-            pin_memory=True)
-       
-        valid_dl = DataLoader(valid_ds, self.config['batch_size']*2, num_workers=4, pin_memory=True)
-
-        device = get_default_device()
-        self.train_dl = DeviceDataLoader(train_dl, device)
-        self.valid_dl = DeviceDataLoader(valid_dl, device)
+                img_data = pil_to_skimage(tmp_ds[i][0])
+                img_data = convert_img_to_grayscale(img_data)
+                ind_n_difficulty.append((i, calculate_mean_si(img_data)))
+                ind_n_difficulty = sorted(ind_n_difficulty, key=lambda x: x[1])
+            
+            self.metadata["complexity_ranked_indicies"] = [x[0] for x in ind_n_difficulty]
         logger.info('Loading training data done')
 
+    def __setup_data_loaders(self):
+        device = get_default_device()
+
+        val_dl = DataLoader(self.validation_ds, self.config['batch_size']*2, num_workers=4, pin_memory=True)
+        self.validation_dl = DeviceDataLoader(val_dl, device)
+
+        if  'curriculum' in self.config and self.config['curriculum']['name'] == "complexity":
+            curriculum_params = self.config['curriculum']['parameters']
+            t_g = curriculum_params['t_g']
+            u_0 = curriculum_params['u_0']
+            p = curriculum_params['p']
+            num_inputs = len(self.train_ds)
+            num_easiest_examples = calculate_num_easiest_examples(0, t_g, u_0, p, num_inputs)
+
+            subset_indicies = self.metadata["complexity_ranked_indicies"][:num_easiest_examples-1]
+            subset = torch.utils.data.Subset(self.train_ds, subset_indicies)
+
+            logger.info('Starting training on subset of size {}'.format(num_easiest_examples))
+
+            train_dl = DataLoader(
+                subset,
+                self.config['batch_size'],
+                shuffle=True,
+                num_workers=4,
+                pin_memory=True)
+            self.training_dl = DeviceDataLoader(train_dl, device)
+        else:
+            logger.info('Training on full dataset')
+            train_dl = DataLoader(
+                self.train_ds,
+                self.config['batch_size'],
+                shuffle=True,
+                num_workers=4,
+                pin_memory=True)
+            self.training_dl = DeviceDataLoader(train_dl, device)
 
     def __init_model(self):
         model =  None
@@ -119,6 +148,33 @@ class Trainer:
         torch.cuda.empty_cache()
         self.model = to_device(model, device)
 
+    def begin_epoch(self, epoch):
+        if self.curriculum_tfm != None:
+            self.curriculum_tfm.set_epoch(epoch)
+
+        if  'curriculum' in self.config and self.config['curriculum']['name'] == "complexity":
+            device = get_default_device()
+
+            curriculum_params = self.config['curriculum']['parameters']
+            t_g = curriculum_params['t_g']
+            u_0 = curriculum_params['u_0']
+            p = curriculum_params['p']
+            num_inputs = len(self.train_ds)
+            num_easiest_examples = calculate_num_easiest_examples(epoch, t_g, u_0, p, num_inputs)
+
+            subset_indicies = self.metadata["complexity_ranked_indicies"][:num_easiest_examples-1]
+            subset = torch.utils.data.Subset(self.train_ds, subset_indicies)
+
+            logger.info('Training subset size changes to {}'.format(num_easiest_examples))
+
+            train_dl = DataLoader(
+                subset,
+                self.config['batch_size'],
+                shuffle=True,
+                num_workers=4,
+                pin_memory=True)
+            self.training_dl = DeviceDataLoader(train_dl, device)
+
     def save_model(self, model, path):
         logger.info('Saving model')
         torch.save(model.state_dict(), path)
@@ -139,53 +195,53 @@ class Trainer:
 
         logger.info('Test results have been saved to "{}"'.format(result_path))
 
-    def train(self):
-        def fit(epochs, model, train_loader, val_loader, opt_func, train_scheduler=None, step_schedule_on_batch= True, grad_clip=None):
-            best_acc = -1
-            history = []
 
-            for epoch in range(epochs):
-                if (train_scheduler != None) and (not step_schedule_on_batch):
+    def fit(self, epochs, model, opt_func, train_scheduler=None, step_schedule_on_batch= True, grad_clip=None):
+        best_acc = -1
+        history = []
+
+        for epoch in range(epochs):
+            self.begin_epoch(epoch)
+
+            if (train_scheduler != None) and (not step_schedule_on_batch):
+                train_scheduler.step()
+            # Training Phase
+            model.train()
+            train_losses = []
+            train_acc = []
+            for batch in self.training_dl:
+
+                # opt_func.zero_grad()
+                for param in model.parameters():
+                    param.grad = None
+                    
+                loss, acc = model.training_step(batch)
+                train_losses.append(loss)
+                train_acc.append(acc)
+                loss.backward()
+
+                if grad_clip != None:
+                    nn.utils.clip_grad_value_(model.parameters(), 0.1)
+
+                opt_func.step()
+
+                if (train_scheduler != None) and step_schedule_on_batch:
                     train_scheduler.step()
-                # Training Phase
-                model.train()
-                train_losses = []
-                train_acc = []
-                for batch in train_loader:
-
-                    # opt_func.zero_grad()
-                    for param in model.parameters():
-                        param.grad = None
-                        
-                    loss, acc = model.training_step(batch)
-                    train_losses.append(loss)
-                    train_acc.append(acc)
-                    loss.backward()
-
-                    if grad_clip != None:
-                        nn.utils.clip_grad_value_(model.parameters(), 0.1)
-
-                    opt_func.step()
-
-                    if (train_scheduler != None) and step_schedule_on_batch:
-                        train_scheduler.step()
-                # Validation phase
-                result = eval_training(model, val_loader)
-                result['train_loss'] = torch.stack(train_losses).mean().item()
-                result['train_acc'] = torch.stack(train_acc).mean().item()
-                model.epoch_end(epoch, result)
-                history.append(result)
-
-                if self.curriculum_tfm != None:
-                    self.curriculum_tfm.advance_epoch()
+            # Validation phase
+            result = eval_training(model, self.validation_dl)
+            result['train_loss'] = torch.stack(train_losses).mean().item()
+            result['train_acc'] = torch.stack(train_acc).mean().item()
+            model.epoch_end(epoch, result)
+            history.append(result)
 
 
-                if epoch > self.config['save_epoch'] and best_acc < result['val_acc']:
-                    self.save_model(self.model, os.path.join(self.models_dir, self.model_name))
-                    best_acc = result['val_acc']
+            if epoch > self.config['save_epoch'] and best_acc < result['val_acc']:
+                self.save_model(self.model, os.path.join(self.models_dir, self.model_name))
+                best_acc = result['val_acc']
 
-            return history
+        return history
 
+    def train(self):
         logger.info('Training model...')
 
         optimizer = None
@@ -232,7 +288,7 @@ class Trainer:
                 optimizer,
                 learning_rate,
                 epochs=self.config['epochs'], 
-                steps_per_epoch=len(self.train_dl)
+                steps_per_epoch=len(self.training_dl)
             )
             step_schedule_on_batch = True
 
@@ -264,11 +320,9 @@ class Trainer:
             logger.info('Using curriculum  parameters: {}'.format(json.dumps(self.config['curriculum'])))
 
         torch.cuda.empty_cache()
-        history = [eval_training(self.model, self.valid_dl)]
+        history = [eval_training(self.model, self.validation_dl)]
         
-        if self.curriculum_tfm != None:
-            self.curriculum_tfm.reset_epoch()
-        history += fit(self.config['epochs'], self.model, self.train_dl, self.valid_dl, optimizer, train_scheduler, step_schedule_on_batch, grad_clip)
+        history += self.fit(self.config['epochs'], self.model, optimizer, train_scheduler, step_schedule_on_batch, grad_clip)
 
         logger.info('Training model done')
 

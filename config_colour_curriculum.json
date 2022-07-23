@@ -1,19 +1,18 @@
 {
     "batch_size": 128,
     "epochs": 200,
-    "weight_decay": 5e-4,
+    "weight_decay": 1e-4,
     "optimizer": {
-        "name": "sgd",
-        "learning_rate": 0.1,
-        "momentum": 0.9,
-        "nesterov": true
+        "name": "adam",
+        "learning_rate": 0.01
     },
-    "save_epoch": 60,
+    "grad_clip": 0.1,
+    "save_epoch": 100,
     "root_path" : "./",
     "curriculum": {
         "name" : "colour",
         "parameters" : {
-            "t_g": 120,
+            "t_g": 150,
             "c_0": 0.01
         }
     }
