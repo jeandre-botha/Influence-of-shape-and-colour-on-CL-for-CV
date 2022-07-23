@@ -3,7 +3,7 @@ from PIL import Image
 from logger import logger
 from img_utils import alter_img_colour_palette
 
-class Curriculum(object):
+class ColourCurriculumTransform(object):
     def __init__(self, name, parameters):
         self.name = name
         self.parameters = parameters

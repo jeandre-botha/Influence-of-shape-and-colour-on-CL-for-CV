@@ -1,6 +1,7 @@
 import skimage
 from skimage.color import rgb2gray
 from PIL import Image
+import numpy as np
 import math
 
 def __square_root_filter(image_data):
@@ -12,6 +13,12 @@ def __square_root_filter(image_data):
         transformed_img.append(transformed_img_row)
     
     return transformed_img
+
+def pil_to_skimage(img):
+        return np.array(img)
+
+def skimage_to_pil(img_data):
+    return Image.fromarray(img_data)
 
 def calculate_mean_si(image_data):
     tmp_image_data = image_data

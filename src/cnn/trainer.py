@@ -15,7 +15,8 @@ from model import resnet50, eval_training
 from logger import logger
 from utils import get_default_device, to_device
 from data_loader import DeviceDataLoader
-from transform import Curriculum
+from transform import ColourCurriculumTransform
+from sampler import ComplexityCurriculumSampler
 import json
 
 import torch.nn.functional as F
@@ -61,9 +62,9 @@ class Trainer:
         ]
 
         self.curriculum_tfm = None
-        if 'curriculum' in self.config:
+        if 'curriculum' in self.config and self.config['curriculum']['name'] == "colour":
             logger.info('Initiating "{}" curriculum'.format(self.config['curriculum']['name']))
-            self.curriculum_tfm = Curriculum(self.config['curriculum']['name'], self.config['curriculum']['parameters'])
+            self.curriculum_tfm = ColourCurriculumTransform(self.config['curriculum']['name'], self.config['curriculum']['parameters'])
             train_tfms.insert(0, self.curriculum_tfm)
 
         train_tfms = tt.Compose(train_tfms)
@@ -72,7 +73,24 @@ class Trainer:
         train_ds = CIFAR100(root = self.data_dir, download = True, transform = train_tfms)
         valid_ds = CIFAR100(root = self.data_dir, train = False, transform = valid_tfms)
 
-        train_dl = DataLoader(train_ds, self.config['batch_size'], shuffle=True, num_workers=4, pin_memory=True)
+        train_sampler = None
+        if 'curriculum' in self.config and self.config['curriculum']['name'] == "complexity":
+            logger.info('Initiating "{}" curriculum'.format(self.config['curriculum']['name']))
+            ds_inputs = []
+            tmp_ds = CIFAR100(root = self.data_dir, download = True)
+            for i in range(len(tmp_ds)):
+                ds_inputs.append(tmp_ds[i])
+            train_sampler = ComplexityCurriculumSampler(ds_inputs)
+
+        shuffle_train_data = (train_sampler == None)
+        train_dl = DataLoader(
+            train_ds,
+            self.config['batch_size'],
+            sampler=train_sampler,
+            shuffle=shuffle_train_data,
+            num_workers=4,
+            pin_memory=True)
+       
         valid_dl = DataLoader(valid_ds, self.config['batch_size']*2, num_workers=4, pin_memory=True)
 
         device = get_default_device()

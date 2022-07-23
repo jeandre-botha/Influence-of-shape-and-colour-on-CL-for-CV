@@ -1,0 +1,15 @@
+{
+    "batch_size": 128,
+    "epochs": 200,
+    "weight_decay": 1e-4,
+    "optimizer": {
+        "name": "adam",
+        "learning_rate": 0.01
+    },
+    "grad_clip": 0.1,
+    "save_epoch": 100,
+    "root_path" : "./",
+    "curriculum": {
+        "name" : "complexity"
+    }
+}
