@@ -29,6 +29,10 @@ matplotlib.rcParams['figure.facecolor'] = '#ffffff'
 
 
 class Trainer:
+    dataSetNormalizationStats = {
+        "cifar100": ((0.5070751592371323, 0.48654887331495095, 0.4409178433670343), (0.2673342858792401, 0.2564384629170883, 0.27615047132568404))
+    }
+
     def __init__(self, model_name, dataset, config):
         self.model_name = model_name
         self.dataset_name = dataset
@@ -45,8 +49,7 @@ class Trainer:
 
     def __init_data(self):
         logger.info('Loading training data...')
-        stats = ((0.5070751592371323, 0.48654887331495095, 0.4409178433670343),
-        (0.2673342858792401, 0.2564384629170883, 0.27615047132568404))      #cifar100
+        stats = self.dataSetNormalizationStats["cifar100"]
 
         train_tfms = [
             tt.RandomCrop(32, padding=4, padding_mode='reflect'),
