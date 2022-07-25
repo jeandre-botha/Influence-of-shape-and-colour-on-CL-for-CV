@@ -15,13 +15,14 @@ from model import resnet50, eval_training
 from logger import logger
 from utils import get_default_device, to_device
 from data_loader import DeviceDataLoader
-from transform import ColourCurriculumTransform
+from transform import ColourCurriculumTransform, SobelTransform
 from img_utils import calculate_mean_si, convert_img_to_grayscale, pil_to_skimage
 from  curriculm_utils import calculate_num_easiest_examples
 import json
-import math
-
 import torch.nn.functional as F
+from timeit import default_timer as timer
+from datetime import timedelta
+from dataset import AugmentedDataset
 
 torch.backends.cudnn.benchmark = True
 torch.autograd.set_detect_anomaly(False)
@@ -29,8 +30,6 @@ torch.autograd.profiler.profile(False)
 torch.autograd.profiler.emit_nvtx(False)
 
 matplotlib.rcParams['figure.facecolor'] = '#ffffff'
-
-
 class Trainer:
     dataSetNormalizationStats = {
         "cifar100": ((0.5070751592371323, 0.48654887331495095, 0.4409178433670343), (0.2673342858792401, 0.2564384629170883, 0.27615047132568404))
@@ -57,6 +56,8 @@ class Trainer:
         logger.info('Loading training data...')
         stats = self.dataSetNormalizationStats["cifar100"]
 
+        universal_tfms = []
+
         train_tfms = [
             tt.RandomCrop(32, padding=4, padding_mode='reflect'),
             tt.RandomHorizontalFlip(),
@@ -66,30 +67,59 @@ class Trainer:
             tt.Normalize(*stats,inplace=True)
         ]
 
+        validation_tfms = [tt.ToTensor(), tt.Normalize(*stats)]
+
+        if 'use_gray_scale' in self.config and self.config['use_gray_scale'] == True:
+            universal_tfms.insert(0, tt.Grayscale(num_output_channels=3))
+
         self.curriculum_tfm = None
         if 'curriculum' in self.config and self.config['curriculum']['name'] == "colour":
             logger.info('Initiating "{}" curriculum'.format(self.config['curriculum']['name']))
             self.curriculum_tfm = ColourCurriculumTransform(self.config['curriculum']['name'], self.config['curriculum']['parameters'])
             train_tfms.insert(0, self.curriculum_tfm)
 
-        train_tfms = tt.Compose(train_tfms)
-        valid_tfms = tt.Compose([tt.ToTensor(), tt.Normalize(*stats)])
-
-        self.train_ds = CIFAR100(root = self.data_dir, download = True, transform = train_tfms)
-        self.validation_ds = CIFAR100(root = self.data_dir, train = False, transform = valid_tfms)
 
         if 'curriculum' in self.config and self.config['curriculum']['name'] == "complexity":
             logger.info('Initiating "{}" curriculum'.format(self.config['curriculum']['name']))
-            tmp_ds = CIFAR100(root = self.data_dir, download = True)
+
+            # TODO save augmented dataset instead of doing this for each run
+            logger.info('Creating augmented dataset...')
+
+
+            original_ds = CIFAR100(root = self.data_dir, transform = tt.Compose(universal_tfms+train_tfms)) 
+
+            augmented_train_tfms = universal_tfms + [SobelTransform()] + train_tfms
+            augmented_ds = CIFAR100(root = self.data_dir, transform = tt.Compose(augmented_train_tfms))
+            self.train_ds = AugmentedDataset([augmented_ds, original_ds])
+
+            logger.info('Creating augmented dataset done')
+            logger.info('Calculating image difficulty scores...')
+            start = timer()
+
+            tmp_ds = AugmentedDataset([
+                CIFAR100(root = self.data_dir, transform = tt.Compose(universal_tfms+[SobelTransform()])),
+                CIFAR100(root = self.data_dir, transform = tt.Compose(universal_tfms))
+            ])
+
             ind_n_difficulty = []
 
             for i in range(len(tmp_ds)):
                 img_data = pil_to_skimage(tmp_ds[i][0])
-                img_data = convert_img_to_grayscale(img_data)
                 ind_n_difficulty.append((i, calculate_mean_si(img_data)))
-                ind_n_difficulty = sorted(ind_n_difficulty, key=lambda x: x[1])
             
+            ind_n_difficulty = sorted(ind_n_difficulty, key=lambda x: x[1])
+
             self.metadata["complexity_ranked_indicies"] = [x[0] for x in ind_n_difficulty]
+
+            end = timer()
+            print("ds size: ", len(self.train_ds))
+
+            logger.info('Calculating image difficulty scores done, took {}'.format(timedelta(seconds=end-start)))
+        else:
+            self.train_ds = CIFAR100(root = self.data_dir, download = True, transform = tt.Compose(universal_tfms+train_tfms))
+
+        self.validation_ds = CIFAR100(root = self.data_dir, train = False, transform = tt.Compose(universal_tfms+validation_tfms))
+
         logger.info('Loading training data done')
 
     def __setup_data_loaders(self):
@@ -106,7 +136,7 @@ class Trainer:
             num_inputs = len(self.train_ds)
             num_easiest_examples = calculate_num_easiest_examples(0, t_g, u_0, p, num_inputs)
 
-            subset_indicies = self.metadata["complexity_ranked_indicies"][:num_easiest_examples-1]
+            subset_indicies = self.metadata["complexity_ranked_indicies"][0:num_easiest_examples-1]
             subset = torch.utils.data.Subset(self.train_ds, subset_indicies)
 
             logger.info('Starting training on subset of size {}'.format(num_easiest_examples))
@@ -162,10 +192,10 @@ class Trainer:
             num_inputs = len(self.train_ds)
             num_easiest_examples = calculate_num_easiest_examples(epoch, t_g, u_0, p, num_inputs)
 
-            subset_indicies = self.metadata["complexity_ranked_indicies"][:num_easiest_examples-1]
+            subset_indicies = self.metadata["complexity_ranked_indicies"][0:num_easiest_examples-1]
             subset = torch.utils.data.Subset(self.train_ds, subset_indicies)
 
-            logger.info('Training subset size changes to {}'.format(num_easiest_examples))
+            logger.info('Training subset size changed to {}'.format(num_easiest_examples))
 
             train_dl = DataLoader(
                 subset,

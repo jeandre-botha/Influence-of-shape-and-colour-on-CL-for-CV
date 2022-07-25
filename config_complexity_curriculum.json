@@ -8,6 +8,7 @@
     },
     "grad_clip": 0.1,
     "save_epoch": 100,
+    "use_gray_scale" : true,
     "root_path" : "./",
     "curriculum": {
         "name" : "complexity",
