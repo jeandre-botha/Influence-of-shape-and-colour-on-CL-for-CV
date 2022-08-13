@@ -212,7 +212,7 @@ class Trainer:
 
     def test(self):
         torch.cuda.empty_cache()
-        result = eval_training(self.model, self.valid_dl)
+        result = eval_training(self.model, self.validation_dl)
         print("val_loss: {}, val_acc: {}".format(result['val_loss'], result['val_acc']))
 
         file_name = 'test_{}_result.txt'.format(str(datetime.now().timestamp()))
@@ -278,6 +278,7 @@ class Trainer:
         train_scheduler = None
         momentum = None
         use_nesterov = None
+        use_train_scheduler = self.config['optimizer']['use_train_scheduler'] if 'use_train_scheduler' in self.config['optimizer'] else False
         train_scheduler_config = None
         step_schedule_on_batch = False
         optimizer_config = self.config['optimizer']
@@ -294,18 +295,22 @@ class Trainer:
                 weight_decay=weight_decay,
                 nesterov=use_nesterov
             )
-            train_scheduler = optim.lr_scheduler.MultiStepLR(
-                optimizer,
-                milestones=[60, 120, 160],
-                gamma=0.2
-            )
-            step_schedule_on_batch = False
 
-            train_scheduler_config = {
-                "type": "MultiStepLR",
-                "train_scheduler_milestones": "[60, 120, 160]",
-                "train_scheduler_gamma": "0.2",
-            }
+            if use_train_scheduler:
+                train_scheduler = optim.lr_scheduler.MultiStepLR(
+                    optimizer,
+                    milestones=[60, 120, 160],
+                    gamma=0.2
+                )
+
+                train_scheduler_config = {
+                    "type": "MultiStepLR",
+                    "train_scheduler_milestones": "[60, 120, 160]",
+                    "train_scheduler_gamma": "0.2",
+                }
+
+                step_schedule_on_batch = False
+            
 
         elif optimizer_config['name'] == 'adam':
             learning_rate = optimizer_config['learning_rate']
@@ -314,18 +319,21 @@ class Trainer:
                 learning_rate,
                 weight_decay=weight_decay
             )
-            train_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-                optimizer,
-                learning_rate,
-                epochs=self.config['epochs'], 
-                steps_per_epoch=len(self.training_dl)
-            )
-            step_schedule_on_batch = True
 
-            train_scheduler_config = {
-                "type": "OneCycleLR",
-                "max_lr": learning_rate
-            }
+            if use_train_scheduler:
+                train_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                    optimizer,
+                    learning_rate,
+                    epochs=self.config['epochs'], 
+                    steps_per_epoch=len(self.training_dl)
+                )
+               
+                train_scheduler_config = {
+                    "type": "OneCycleLR",
+                    "max_lr": learning_rate
+                }
+            
+                step_schedule_on_batch = True
 
         else:
             raise ValueError('Unsupported optimizer {}'.format(self.config['optimizer']['name']))
@@ -351,7 +359,6 @@ class Trainer:
 
         torch.cuda.empty_cache()
         history = [eval_training(self.model, self.validation_dl)]
-        
         history += self.fit(self.config['epochs'], self.model, optimizer, train_scheduler, step_schedule_on_batch, grad_clip)
 
         logger.info('Training model done')
