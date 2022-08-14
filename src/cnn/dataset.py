@@ -32,7 +32,7 @@ def load_dataset(dataset_name, data_dir, prior_transforms:list, transforms:list,
     transform = tt.Compose(transform)
     if dataset_name == "cifar100":
         return CIFAR100(root =data_dir, train = train, transform = transform, download = True)
-    elif dataset_name == "mpeg400":
+    elif dataset_name == "mpeg400" or dataset_name == "2dshapes":
         data_path = os.path.join(data_dir, dataset_name)
         ds = ImageFolder(root = data_path, transform= transform)
         ds_size = len(ds)
