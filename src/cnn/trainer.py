@@ -3,7 +3,6 @@ import torch
 from datetime import datetime
 import torch.nn as nn
 import numpy as np
-from torchvision.datasets import CIFAR100
 from torch.utils.data import DataLoader
 import torchvision.transforms as tt
 import matplotlib
@@ -22,7 +21,7 @@ import json
 import torch.nn.functional as F
 from timeit import default_timer as timer
 from datetime import timedelta
-from dataset import AugmentedDataset
+from dataset import AugmentedDataset, load_dataset, calculate_dataset_stats
 
 torch.backends.cudnn.benchmark = True
 torch.autograd.set_detect_anomaly(False)
@@ -54,9 +53,17 @@ class Trainer:
 
     def __init_data(self):
         logger.info('Loading training data...')
-        stats = self.dataSetNormalizationStats["cifar100"]
 
-        universal_tfms = []
+        stats = None
+        if self.dataset_name in self.dataSetNormalizationStats:
+            stats = self.dataSetNormalizationStats[self.dataset_name]
+        else:
+            logger.info("Stats for dataset unavailable, calculating...")
+            stats = calculate_dataset_stats(self.dataset_name, self.data_dir, 32)
+            logger.info("Dataset stats calculated.")
+
+
+        universal_tfms = [tt.Resize((32, 32))]
 
         train_tfms = [
             tt.RandomCrop(32, padding=4, padding_mode='reflect'),
@@ -67,10 +74,10 @@ class Trainer:
             tt.Normalize(*stats,inplace=True)
         ]
 
-        validation_tfms = [tt.ToTensor(), tt.Normalize(*stats)]
+        validation_tfms = [ tt.ToTensor(), tt.Normalize(*stats)]
 
         if 'use_gray_scale' in self.config and self.config['use_gray_scale'] == True:
-            universal_tfms.insert(0, tt.Grayscale(num_output_channels=3))
+            universal_tfms.append(tt.Grayscale(num_output_channels=3))
 
         self.curriculum_tfm = None
         if 'curriculum' in self.config and self.config['curriculum']['name'] == "colour":
@@ -86,10 +93,9 @@ class Trainer:
             logger.info('Creating augmented dataset...')
 
 
-            original_ds = CIFAR100(root = self.data_dir, transform = tt.Compose(universal_tfms+train_tfms)) 
+            original_ds = load_dataset(self.dataset_name, self.data_dir, universal_tfms, train_tfms, train=True)
 
-            augmented_train_tfms = universal_tfms + [SobelTransform()] + train_tfms
-            augmented_ds = CIFAR100(root = self.data_dir, transform = tt.Compose(augmented_train_tfms))
+            augmented_ds = load_dataset(self.dataset_name, self.data_dir, universal_tfms + [SobelTransform()], train_tfms, train=True)
             self.train_ds = AugmentedDataset([augmented_ds, original_ds])
 
             logger.info('Creating augmented dataset done')
@@ -97,8 +103,8 @@ class Trainer:
             start = timer()
 
             tmp_ds = AugmentedDataset([
-                CIFAR100(root = self.data_dir, transform = tt.Compose(universal_tfms+[SobelTransform()])),
-                CIFAR100(root = self.data_dir, transform = tt.Compose(universal_tfms))
+                load_dataset(self.dataset_name, self.data_dir, tt.Compose(universal_tfms+[SobelTransform()]), None, train=True),
+                load_dataset(self.dataset_name, self.data_dir, universal_tfms, None, train=True)
             ])
 
             ind_n_difficulty = []
@@ -116,9 +122,9 @@ class Trainer:
 
             logger.info('Calculating image difficulty scores done, took {}'.format(timedelta(seconds=end-start)))
         else:
-            self.train_ds = CIFAR100(root = self.data_dir, download = True, transform = tt.Compose(universal_tfms+train_tfms))
+            self.train_ds = load_dataset(self.dataset_name, self.data_dir, universal_tfms, train_tfms, train=True)
 
-        self.validation_ds = CIFAR100(root = self.data_dir, train = False, transform = tt.Compose(universal_tfms+validation_tfms))
+        self.validation_ds = load_dataset(self.dataset_name, self.data_dir, universal_tfms,validation_tfms, train=False)
 
         logger.info('Loading training data done')
 
