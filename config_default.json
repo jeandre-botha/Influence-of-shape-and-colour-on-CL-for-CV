@@ -1,12 +1,14 @@
 {
     "batch_size": 128,
     "epochs": 200,
-    "weight_decay": 1e-4,
+    "weight_decay": 0.0005,
     "optimizer": {
-        "name": "adam",
-        "learning_rate": 0.01
+        "name": "sgd",
+        "learning_rate": 0.1,
+        "momentum": 0.9,
+        "use_nesterov": true,
+        "use_train_scheduler": true
     },
-    "grad_clip": 0.1,
     "save_epoch": 100,
     "root_path" : "./"
 } 
