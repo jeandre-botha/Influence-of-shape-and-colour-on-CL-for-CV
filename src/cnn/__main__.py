@@ -26,7 +26,8 @@ CONFIG_SCHEMA = {
                 'name': {'type': 'string'},
                 'learning_rate':  {'type': 'number'},
                 'momentum': {'type': 'number'},
-                'nesterov': {'type': 'boolean'},
+                'use_nesterov': {'type': 'boolean'},
+                'use_train_scheduler': {'type': 'boolean'},
             },
             'required': ['name', 'learning_rate']
         },

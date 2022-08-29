@@ -292,7 +292,7 @@ class Trainer:
         if optimizer_config['name'] == 'sgd':
             learning_rate = optimizer_config['learning_rate']
             momentum = optimizer_config['momentum'] if 'momentum' in optimizer_config else 0.0
-            use_nesterov = optimizer_config['nesterov'] if 'nesterov' in optimizer_config else False
+            use_nesterov = optimizer_config['use_nesterov'] if 'use_nesterov' in optimizer_config else False
 
             optimizer = optim.SGD(
                 self.model.parameters(),
