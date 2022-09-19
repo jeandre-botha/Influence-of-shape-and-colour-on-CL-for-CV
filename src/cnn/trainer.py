@@ -89,23 +89,13 @@ class Trainer:
         if 'curriculum' in self.config and self.config['curriculum']['name'] == "complexity":
             logger.info('Initiating "{}" curriculum'.format(self.config['curriculum']['name']))
 
-            # TODO save augmented dataset instead of doing this for each run
-            logger.info('Creating augmented dataset...')
-
-
-            original_ds = load_dataset(self.dataset_name, self.data_dir, universal_tfms, train_tfms, train=True)
-
-            augmented_ds = load_dataset(self.dataset_name, self.data_dir, universal_tfms + [SobelTransform()], train_tfms, train=True)
-            self.train_ds = AugmentedDataset([augmented_ds, original_ds])
+            self.train_ds = load_dataset(self.dataset_name, self.data_dir, universal_tfms, train_tfms, train=True)
 
             logger.info('Creating augmented dataset done')
             logger.info('Calculating image difficulty scores...')
             start = timer()
 
-            tmp_ds = AugmentedDataset([
-                load_dataset(self.dataset_name, self.data_dir, tt.Compose(universal_tfms+[SobelTransform()]), None, train=True),
-                load_dataset(self.dataset_name, self.data_dir, universal_tfms, None, train=True)
-            ])
+            tmp_ds = load_dataset(self.dataset_name, self.data_dir, universal_tfms, None, train=True)
 
             ind_n_difficulty = []
 
@@ -170,7 +160,7 @@ class Trainer:
         if file_exists(model_path):
             try:
                 logger.info('Loading existing model...')
-                model = resnet50()
+                model = resnet50(self.config['num_classes'])
                 model.load_state_dict(torch.load(model_path))
                 logger.info('Loading existing model done')
             except:
@@ -178,7 +168,10 @@ class Trainer:
 
         if model == None:
             logger.info('Initializing new model...')
-            model = resnet50()
+            model = resnet50(self.config['num_classes'])
+
+        if 'replacement_classes' in self.config:
+            model.replace_head(self.config['replacement_classes'])
 
         device = get_default_device()
         torch.cuda.empty_cache()
@@ -231,6 +224,18 @@ class Trainer:
 
         logger.info('Test results have been saved to "{}"'.format(result_path))
 
+    def test_convergence(history, patience, min_delta = 0.0001):
+        if len(history) < patience:
+            return False
+
+        base = history[-patience]["val_loss"]
+
+        for i in range(-patience + 1, -1):
+            if history[i]["val_loss"] - base >= min_delta:
+                return True
+        
+        return False
+        
 
     def fit(self, epochs, model, opt_func, train_scheduler=None, step_schedule_on_batch= True, grad_clip=None):
         best_acc = -1
@@ -274,6 +279,13 @@ class Trainer:
             if epoch > self.config['save_epoch'] and best_acc < result['val_acc']:
                 self.save_model(self.model, os.path.join(self.models_dir, self.model_name))
                 best_acc = result['val_acc']
+
+            if 'early_stop_enabled' in self.config and self.config['early_stop_enabled'] == True:
+                patience = self.config['early_stop_patience'] if 'early_stop_patience' in self.config else 10
+                min_delta = self.config['early_stop_min_delta'] if 'early_stop_min_delta' in self.config else 0.0001
+                if self.test_convergence(epoch, patience, min_delta):
+                    logger.info('Model converged, halting model training')
+                    return history
 
         return history
 

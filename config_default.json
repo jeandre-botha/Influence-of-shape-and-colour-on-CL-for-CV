@@ -9,6 +9,10 @@
         "use_nesterov": true,
         "use_train_scheduler": true
     },
+    "early_stop_enabled": true,
+    "early_stop_patience": 10,
+    "early_stop_min_delta": 0.0001,
+    "num_classes": 100,
     "save_epoch": 100,
     "root_path" : "./"
 } 

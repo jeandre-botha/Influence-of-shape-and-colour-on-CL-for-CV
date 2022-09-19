@@ -79,11 +79,15 @@ def eval_training(model, val_loader):
     return model.validation_epoch_end(outputs)
 
 class ResNet(nn.Module):
+    num_classes = 100
+    block = None
 
     def __init__(self, block, num_block, num_classes=100):
         super().__init__()
 
         self.in_channels = 64
+        self.num_classes = num_classes
+        self.block = block
 
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1, bias=False),
@@ -94,7 +98,14 @@ class ResNet(nn.Module):
         self.conv4_x = self._make_layer(block, 256, num_block[2], 2)
         self.conv5_x = self._make_layer(block, 512, num_block[3], 2)
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.fc = nn.Linear(512 * self.block.expansion, num_classes)
+
+    def replace_head(self, num_classes=100):
+        self.num_classes = num_classes
+        self.fc = nn.Linear(512 * self.block.expansion, num_classes)
+    
+    def get_num_classes(self):
+        return self.num_classes
 
     def _make_layer(self, block, out_channels, num_blocks, stride):
         """make resnet layers(by layer i didnt mean this 'layer' was the
@@ -156,27 +167,27 @@ class ResNet(nn.Module):
         print("Epoch [{}], train_loss: {:.4f}, train_acc: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}".format(
             epoch, result['train_loss'],  result['train_acc'], result['val_loss'], result['val_acc']))
 
-def resnet18():
+def resnet18(num_classes = 100):
     """ return a ResNet 18 object
     """
-    return ResNet(BasicBlock, [2, 2, 2, 2])
+    return ResNet(BasicBlock, [2, 2, 2, 2], num_classes = num_classes)
 
-def resnet34():
+def resnet34(num_classes = 100):
     """ return a ResNet 34 object
     """
-    return ResNet(BasicBlock, [3, 4, 6, 3])
+    return ResNet(BasicBlock, [3, 4, 6, 3], num_classes = num_classes)
 
-def resnet50():
+def resnet50(num_classes = 100):
     """ return a ResNet 50 object
     """
-    return ResNet(BottleNeck, [3, 4, 6, 3])
+    return ResNet(BottleNeck, [3, 4, 6, 3], num_classes = num_classes)
 
-def resnet101():
+def resnet101(num_classes = 100):
     """ return a ResNet 101 object
     """
-    return ResNet(BottleNeck, [3, 4, 23, 3])
+    return ResNet(BottleNeck, [3, 4, 23, 3], num_classes = num_classes)
 
-def resnet152():
+def resnet152(num_classes = 100):
     """ return a ResNet 152 object
     """
-    return ResNet(BottleNeck, [3, 8, 36, 3])
+    return ResNet(BottleNeck, [3, 8, 36, 3], num_classes = num_classes)

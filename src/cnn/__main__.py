@@ -20,6 +20,10 @@ CONFIG_SCHEMA = {
         'weight_decay': {'type': 'number'},
         'grad_clip': {'type': 'number'},
         'save_epoch': {'type': 'number'},
+        'num_classes': {'type': 'number'},
+        'early_stop_enabled': {'type': 'boolean'},
+        'early_stop_patience': {'type': 'number'},
+        'early_stop_min_delta': {'type': 'number'},
         'optimizer': {
             'type': 'object',
             'properties': {
@@ -41,7 +45,7 @@ CONFIG_SCHEMA = {
         },
 
     },
-    'required': ['batch_size', 'epochs', 'weight_decay', 'optimizer', 'root_path']
+    'required': ['batch_size', 'epochs', 'weight_decay', 'optimizer', 'root_path', 'num_classes']
 }
 
 
