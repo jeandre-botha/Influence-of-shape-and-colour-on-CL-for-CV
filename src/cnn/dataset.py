@@ -3,6 +3,7 @@ from torchvision.datasets import CIFAR100, ImageFolder
 import torchvision.transforms as tt
 import os
 from torch.utils.data import DataLoader
+import random
 
 class AugmentedDataset(torch.utils.data.Dataset):
   
@@ -36,27 +37,35 @@ def load_dataset(dataset_name, data_dir, prior_transforms:list, transforms:list,
         ds_size = len(ds)
         n_test = int(0.2 * ds_size)  # take ~20% for test
 
+        indicies = list(range(0, ds_size-1))
+        random.seed(10)
+        random.shuffle(indicies)
+        
+        train_indicies = indicies[:ds_size-n_test]
+        test_indicies = indicies[-n_test:]
+
         if train == None: 
             return ds
         elif train == True:
-            return torch.utils.data.Subset(ds, range(n_test, ds_size))
+            return torch.utils.data.Subset(ds, train_indicies)
         else:
-            return torch.utils.data.Subset(ds, range(n_test))
+            return torch.utils.data.Subset(ds, test_indicies)
     else:
         raise ValueError("unsupported dataset")
 
 def calculate_dataset_stats(dataset_name, data_dir, image_size):
 
-    transform =  tt.Compose([
+    transform = [
         tt.Resize((32, 32)),
         tt.RandomHorizontalFlip(),
         tt.ToTensor(),
-    ]) 
+    ] 
 
     dataset = load_dataset(
         dataset_name = dataset_name,
         data_dir = data_dir,
-        transform = transform,
+        prior_transforms = [],
+        transforms = transform,
         train = None)
 
     data_loader = DataLoader(

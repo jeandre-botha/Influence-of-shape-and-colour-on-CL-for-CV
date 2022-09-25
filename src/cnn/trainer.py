@@ -9,6 +9,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 from os.path import exists as file_exists
 import torch.optim as optim
+import time as t
+import sys
 
 from model import resnet50, eval_training
 from logger import logger
@@ -46,6 +48,7 @@ class Trainer:
         self.metadata = {}
         self.training_dl = None
         self.validation_dl = None
+        self.warmup_epochs = self.config['warmup_epochs'] if 'warmup_epochs' in self.config else 0
         self.__init_data()
         self.__setup_data_loaders()
         self.__init_model()
@@ -80,7 +83,7 @@ class Trainer:
             universal_tfms.append(tt.Grayscale(num_output_channels=3))
 
         self.curriculum_tfm = None
-        if 'curriculum' in self.config and self.config['curriculum']['name'] == "colour":
+        if 'curriculum' in self.config and (self.config['curriculum']['name'] == "colour" or self.config['curriculum']['name'] == "colour_alt"):
             logger.info('Initiating "{}" curriculum'.format(self.config['curriculum']['name']))
             self.curriculum_tfm = ColourCurriculumTransform(self.config['curriculum']['name'], self.config['curriculum']['parameters'])
             train_tfms.insert(0, self.curriculum_tfm)
@@ -179,7 +182,8 @@ class Trainer:
 
     def begin_epoch(self, epoch):
         if self.curriculum_tfm != None:
-            self.curriculum_tfm.set_epoch(epoch)
+            if self.config['curriculum']['name'] == "colour":
+                self.curriculum_tfm.set_epoch(epoch)
 
         if  'curriculum' in self.config and self.config['curriculum']['name'] == "complexity":
             device = get_default_device()
@@ -204,6 +208,10 @@ class Trainer:
                 pin_memory=True)
             self.training_dl = DeviceDataLoader(train_dl, device)
 
+    def end_epoch(self, epoch):
+        if self.warmup_epochs > 0:
+            self.warmup_epochs -= 1
+
     def save_model(self, model, path):
         logger.info('Saving model')
         torch.save(model.state_dict(), path)
@@ -224,21 +232,24 @@ class Trainer:
 
         logger.info('Test results have been saved to "{}"'.format(result_path))
 
-    def test_convergence(history, patience, min_delta = 0.0001):
-        if len(history) < patience:
+    def test_convergence(self, history:list, best_loss, best_epoch, current_epoch, patience = 10, min_delta = 0.0001):
+        patience = self.config['early_stop_patience'] if 'early_stop_patience' in self.config else 10
+        min_delta = self.config['early_stop_min_delta'] if 'early_stop_min_delta' in self.config else 0.0001
+
+        if len(history) < patience or self.warmup_epochs > 0 or  (current_epoch - best_epoch) < patience:
             return False
 
-        base = history[-patience]["val_loss"]
-
-        for i in range(-patience + 1, -1):
-            if history[i]["val_loss"] - base >= min_delta:
-                return True
+        count = 0
+        for i in range(best_epoch+1, current_epoch):
+            if best_loss - history[i]["val_loss"]  < min_delta:
+                count += 1
         
-        return False
+        return count >= patience
         
 
-    def fit(self, epochs, model, opt_func, train_scheduler=None, step_schedule_on_batch= True, grad_clip=None):
-        best_acc = -1
+    def fit(self, start_time, epochs, model, opt_func, train_scheduler=None, step_schedule_on_batch= True, grad_clip=None):
+        best_loss = sys.float_info.max
+        best_epoch = 0
         history = []
 
         for epoch in range(epochs):
@@ -272,20 +283,48 @@ class Trainer:
             result = eval_training(model, self.validation_dl)
             result['train_loss'] = torch.stack(train_losses).mean().item()
             result['train_acc'] = torch.stack(train_acc).mean().item()
-            model.epoch_end(epoch, result)
+            model.epoch_end(epoch, result, t.time() - start_time)
             history.append(result)
 
-
-            if epoch > self.config['save_epoch'] and best_acc < result['val_acc']:
-                self.save_model(self.model, os.path.join(self.models_dir, self.model_name))
-                best_acc = result['val_acc']
-
             if 'early_stop_enabled' in self.config and self.config['early_stop_enabled'] == True:
-                patience = self.config['early_stop_patience'] if 'early_stop_patience' in self.config else 10
-                min_delta = self.config['early_stop_min_delta'] if 'early_stop_min_delta' in self.config else 0.0001
-                if self.test_convergence(epoch, patience, min_delta):
+                if self.test_convergence(history, best_loss, best_epoch, epoch) == True:
                     logger.info('Model converged, halting model training')
-                    return history
+
+                    if self.config['curriculum']['name'] == "colour_alt":
+                        if self.curriculum_tfm != None:
+                            current_available_colours = self.curriculum_tfm.get_available_colours()
+                                
+                            if current_available_colours == 256:
+                                if best_loss > result['val_loss']:
+                                    self.save_model(self.model, os.path.join(self.models_dir, self.model_name))
+                                    return history
+                            else:
+                                if current_available_colours < 6:
+                                    self.curriculum_tfm.set_available_colours(9)
+                                elif current_available_colours < 9:
+                                    self.curriculum_tfm.set_available_colours(10)                              
+                                elif current_available_colours < 27:
+                                    self.curriculum_tfm.set_available_colours(27)
+                                elif current_available_colours < 81:
+                                    self.curriculum_tfm.set_available_colours(81)
+                                elif current_available_colours < 243:
+                                    self.curriculum_tfm.set_available_colours(243)
+                                elif current_available_colours < 256:
+                                    self.curriculum_tfm.set_available_colours(256)
+  
+                                best_loss = sys.float_info.max
+                                best_epoch = epoch
+
+                        if best_loss > result['val_loss']:
+                            self.save_model(self.model, os.path.join(self.models_dir, self.model_name))
+                    else:
+                        return history
+
+            self.end_epoch(epoch=epoch)
+            if best_loss > result['val_loss']:   
+                self.save_model(self.model, os.path.join(self.models_dir, self.model_name))
+                best_loss = result['val_loss']
+                best_epoch = epoch
 
         return history
 
@@ -367,7 +406,11 @@ class Trainer:
             "learning_rate": learning_rate,
             "momentum": momentum,
             "use_nesterov": use_nesterov,
-            "train_scheduler_config": train_scheduler_config
+            "train_scheduler_config": train_scheduler_config,
+            "early_stop_enabled": self.config['early_stop_enabled'] if 'early_stop_enabled' in self.config else False,
+            "early_stop_patience": self.config['early_stop_patience'] if 'early_stop_patience' in self.config else 10,
+            "early_stop_min_delta":self.config['early_stop_min_delta'] if 'early_stop_min_delta' in self.config else 0.0001,
+            "warmup_epochs":self.config['warmup_epochs'] if 'warmup_epochs' in self.config else 0,
 
         }
 
@@ -377,9 +420,10 @@ class Trainer:
 
         torch.cuda.empty_cache()
         history = [eval_training(self.model, self.validation_dl)]
-        history += self.fit(self.config['epochs'], self.model, optimizer, train_scheduler, step_schedule_on_batch, grad_clip)
-
-        logger.info('Training model done')
+        start = t.time()
+        history += self.fit(start, self.config['epochs'], self.model, optimizer, train_scheduler, step_schedule_on_batch, grad_clip)
+        end = t.time()
+        logger.info('Training model done (time taken: {}s)'.format(end - start))
 
         self.save_training_plots(history)
 

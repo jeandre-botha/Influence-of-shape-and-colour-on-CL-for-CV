@@ -19,7 +19,6 @@ CONFIG_SCHEMA = {
         'epochs': {'type': 'number'},
         'weight_decay': {'type': 'number'},
         'grad_clip': {'type': 'number'},
-        'save_epoch': {'type': 'number'},
         'num_classes': {'type': 'number'},
         'early_stop_enabled': {'type': 'boolean'},
         'early_stop_patience': {'type': 'number'},

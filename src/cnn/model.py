@@ -163,9 +163,9 @@ class ResNet(nn.Module):
         epoch_acc = torch.stack(batch_accs).mean()
         return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
     
-    def epoch_end(self, epoch, result):
-        print("Epoch [{}], train_loss: {:.4f}, train_acc: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}".format(
-            epoch, result['train_loss'],  result['train_acc'], result['val_loss'], result['val_acc']))
+    def epoch_end(self, epoch, result, time):
+        print("Epoch [{}], train_loss: {:.4f}, train_acc: {:.4f}, val_loss: {:.4f}, val_acc: {:.4f}, time: {:.2f}".format(
+            epoch, result['train_loss'],  result['train_acc'], result['val_loss'], result['val_acc'], time))
 
 def resnet18(num_classes = 100):
     """ return a ResNet 18 object
